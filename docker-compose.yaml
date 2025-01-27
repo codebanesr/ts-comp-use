@@ -1,4 +1,4 @@
-version: "3.8"
+version: '3.8'
 
 services:
   nodecomp:
@@ -6,40 +6,42 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      - WIDTH=1920
-      - HEIGHT=1080
+      - DISPLAY_NUM=1
+      - WIDTH=1366
+      - HEIGHT=768
       - API_URL=https://app.tryiris.dev
     ports:
-      - "5900:5900"  # VNC server port
-      - "6080:6080"  # Websockify port
-    user: "${UID}:${GID}"  # Use the current user's ID and group to avoid permission issues
+      - '5900:5900' # VNC server port
+      - '6080:6080' # Websockify port
+      - '3000:3000' # nestjs port
+    user: '${UID}:${GID}' # Use the current user's ID and group to avoid permission issues
     command: >
       sh -c "
       chmod -R 777 /iris-data"
     volumes:
       - ${HOME}/.anthropic:/home/computeruse/.anthropic
-      - firefox-data:/home/computeruse/.mozilla/firefox-esr
-      - ./scripts:/home/computeruse/scripts
+      # - firefox-data:/home/computeruse/.mozilla/firefox-esr
+      # - ./scripts:/home/computeruse/scripts
       - ./iris-data:/iris-data
     stdin_open: true
     tty: true
     deploy:
-      replicas: 1  # This will create 4 instances of mewtwo
+      replicas: 1 # This will create 4 instances of mewtwo
 
-  rabbitmq:
-    image: rabbitmq:3-management
-    container_name: rabbitmq
-    environment:
-      - RABBITMQ_DEFAULT_USER=admin
-      - RABBITMQ_DEFAULT_PASS=admin
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    volumes:
-      - rabbitmq-data:/var/lib/rabbitmq
-    restart: unless-stopped
+  # rabbitmq:
+  #   image: rabbitmq:3-management
+  #   container_name: rabbitmq
+  #   environment:
+  #     - RABBITMQ_DEFAULT_USER=admin
+  #     - RABBITMQ_DEFAULT_PASS=admin
+  #   ports:
+  #     - "5672:5672"
+  #     - "15672:15672"
+  #   volumes:
+  #     - rabbitmq-data:/var/lib/rabbitmq
+  #   restart: unless-stopped
 
 volumes:
-  firefox-data:
-  rabbitmq-data:
+  # firefox-data:
+  # rabbitmq-data:
   iris-data:

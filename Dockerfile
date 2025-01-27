@@ -38,6 +38,7 @@ RUN apt-get update && \
     # PPA req
     software-properties-common && \
     # Userland apps
+    sudo add-apt-repository ppa:mozillateam/ppa && \
     sudo apt-get install -y --no-install-recommends \
     libreoffice \
     x11-apps \
@@ -47,17 +48,15 @@ RUN apt-get update && \
     tint2 \
     galculator \
     pcmanfm \
-    unzip && \
+    unzip \
+    # Install Firefox ESR
+    firefox-esr && \
     apt-get clean
 
 # Install noVNC
 RUN git clone --branch v1.5.0 https://github.com/novnc/noVNC.git /opt/noVNC && \
     git clone --branch v0.12.0 https://github.com/novnc/websockify /opt/noVNC/utils/websockify && \
     ln -s /opt/noVNC/vnc.html /opt/noVNC/index.html
-
-# Install cloudflared
-RUN curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared && \
-    chmod +x /usr/local/bin/cloudflared
 
 # Install Node.js and pnpm
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
@@ -84,12 +83,5 @@ RUN cd $HOME/nestjs-app && pnpm install
 
 RUN ls -sail
 
-# Environment variables for display
-ARG DISPLAY_NUM=1
-ARG HEIGHT=768
-ARG WIDTH=1024
-ENV DISPLAY_NUM=$DISPLAY_NUM
-ENV HEIGHT=$HEIGHT
-ENV WIDTH=$WIDTH
 
 ENTRYPOINT [ "./entrypoint.sh" ]
