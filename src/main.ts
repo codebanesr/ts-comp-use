@@ -6,12 +6,12 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 async function bootstrap() {
-  const app = await NestFactory.createApplicationContext(ScriptsModule);
-  const scriptsService = app.get(ScriptsService);
+  const app = await NestFactory.create(ScriptsModule);
 
-  scriptsService.runScriptOne();
+  app.enableCors();
+  await app.listen(3000);
 
-  await app.close();
+  console.log('Application is running on: http://localhost:3000');
 }
 
 bootstrap();
