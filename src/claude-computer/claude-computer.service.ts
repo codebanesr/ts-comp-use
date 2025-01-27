@@ -12,7 +12,6 @@ import {
     keyboard,
     Button,
     Point,
-    Region,
     straightTo,
     Key
 } from '@nut-tree-fork/nut-js';

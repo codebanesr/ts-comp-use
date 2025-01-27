@@ -11,6 +11,6 @@ export class ScriptsService {
     constructor(private readonly computerUserService: ClaudeComputerService) {}
     
     async runScriptOne() {
-        await this.computerUserService.interactWithClaude('Help me scroll 100 pixels down, take a screenshot and describe it. then click on the package.json tab. Use xdotool commands for keyboard please');
+        await this.computerUserService.interactWithClaude('Scroll down to 200px');
     }
 }
