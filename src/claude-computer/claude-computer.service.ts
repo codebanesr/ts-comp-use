@@ -200,88 +200,76 @@ export class ClaudeComputerService {
           return x.type === 'text';
         });
 
-        console.log('Claude says: ' + text[0].text);
+        console.log('Claude says: ' + text[0]?.text);
         console.log('Tools requested: ' + JSON.stringify(tools, null, 2));
 
-        await Promise.all(
-          tools.map(async (tool) => {
+        for (const tool of tools) {
+          messages.push({
+            role: 'assistant',
+            content: [
+              {
+                id: tool.id,
+                input: tool.input,
+                name: tool.name,
+                type: tool.type,
+              },
+            ],
+          });
+
+          // Execute action
+          const result = await this.executeAction(
+            // @ts-expect-error
+            tool.input.action,
+
+            // @ts-expect-error
+            tool.input.text,
+
+            // @ts-expect-error
+            tool.input.coordinate,
+          );
+
+          // Add tool result message
+          if (result.screenshot_path) {
+            console.log('Sending screenshot result back to Claude');
             messages.push({
-              role: 'assistant',
+              role: 'user',
               content: [
                 {
-                  id: tool.id,
-                  input: tool.input,
-                  name: tool.name,
-                  type: tool.type,
+                  type: 'tool_result',
+                  tool_use_id: tool.id,
+                  content: [
+                    {
+                      type: 'image',
+                      source: {
+                        media_type: 'image/png',
+                        data: fs
+                          .readFileSync(result.screenshot_path)
+                          .toString('base64'),
+                        type: 'base64',
+                      },
+                    },
+                  ],
                 },
               ],
             });
-
-            const result = await this.executeAction(
-              // @ts-expect-error
-              tool.input.action,
-              // @ts-expect-error
-              tool.input.text,
-              // @ts-expect-error
-              tool.input.coordinate,
-            );
-
-            if (result.screenshot_path) {
-              console.log('Sending screenshot result back to Claude');
-              messages.push({
-                role: 'user',
-                content: [
-                  {
-                    type: 'tool_result',
-                    tool_use_id: tool.id,
-                    content: [
-                      {
-                        type: 'image',
-                        source: {
-                          media_type: 'image/png',
-                          data: fs
-                            .readFileSync(result.screenshot_path)
-                            .toString('base64'),
-                          type: 'base64',
-                        },
-                      },
-                    ],
-                  },
-                ],
-              });
-            } else if (result.x !== undefined && result.y !== undefined) {
-              console.log(
-                `Sending cursor position result back to Claude: ${result.x}, ${result.y}`,
-              );
-              messages.push({
-                role: 'user',
-                content: [
-                  {
-                    type: 'tool_result',
-                    tool_use_id: tool.id,
-                    content: [
-                      {
-                        type: 'text',
-                        text: `Cursor position: ${result.x}, ${result.y}`,
-                      },
-                    ],
-                  },
-                ],
-              });
-            } else {
-              console.log('Sending tool result back to Claude');
-              messages.push({
-                role: 'user',
-                content: [
-                  {
-                    type: 'tool_result',
-                    tool_use_id: tool.id,
-                  },
-                ],
-              });
-            }
-          }),
-        );
+          } else {
+            messages.push({
+              role: 'user',
+              content: [
+                {
+                  type: 'tool_result',
+                  tool_use_id: tool.id,
+                  content: [
+                    {
+                      type: 'text',
+                      text: 'Success',
+                    },
+                  ],
+                },
+              ],
+            });
+          }
+        }
       } else if (
         response.stop_reason === 'stop_sequence' ||
         response.stop_reason === 'end_turn'
