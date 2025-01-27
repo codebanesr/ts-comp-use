@@ -30,88 +30,19 @@ const SYSTEM_PROMPT = `<SYSTEM_CAPABILITY>
 * If the item you are looking at is a pdf, if after taking a single screenshot of the pdf it seems that you want to read the entire document instead of trying to continue to read the pdf from your screenshots + navigation, determine the URL, use curl to download the pdf, install and use pdftotext to convert it to a text file, and then read that text file directly with your StrReplaceEditTool.
 </IMPORTANT>`;
 
-enum ScalingSource {
-  COMPUTER = 'computer',
-  API = 'api',
-}
-
 @Injectable()
 export class ClaudeComputerService {
-  private actualWidth: number;
-  private actualHeight: number;
-  private displayWidth: number;
-  private displayHeight: number;
-  private readonly MAX_SCALING_TARGETS = [
-    { name: 'XGA', width: 1024, height: 768 },
-    { name: 'WXGA', width: 1280, height: 800 },
-    { name: 'FWXGA', width: 1366, height: 768 },
-  ];
-  private scalingEnabled = true;
   private displayPrefix: string;
 
   constructor() {
     const displayNum = process.env.DISPLAY_NUM || '1';
     this.displayPrefix = `DISPLAY=:${displayNum} `;
-
-    this.actualWidth = parseInt(process.env.WIDTH || '0', 10);
-    this.actualHeight = parseInt(process.env.HEIGHT || '0', 10);
-    if (!this.actualWidth || !this.actualHeight) {
-      throw new Error('WIDTH and HEIGHT environment variables must be set');
-    }
-
-    const { width, height } = this.computeScaledDimensions();
-    this.displayWidth = width;
-    this.displayHeight = height;
   }
 
-  private computeScaledDimensions(): { width: number; height: number } {
-    const actualRatio = this.actualWidth / this.actualHeight;
-    let targetDimension = null;
-
-    for (const target of this.MAX_SCALING_TARGETS) {
-      const targetRatio = target.width / target.height;
-      if (Math.abs(targetRatio - actualRatio) < 0.02) {
-        if (target.width < this.actualWidth) {
-          targetDimension = target;
-          break;
-        }
-      }
-    }
-
-    return (
-      targetDimension || { width: this.actualWidth, height: this.actualHeight }
-    );
-  }
-
-  private scaleCoordinates(
-    source: ScalingSource,
-    x: number,
-    y: number,
-  ): { x: number; y: number } {
-    if (source === ScalingSource.API) {
-      if (x > this.displayWidth || y > this.displayHeight) {
-        throw new Error(`Coordinates ${x}, ${y} are out of bounds`);
-      }
-    }
-
-    if (!this.scalingEnabled) {
-      return { x, y };
-    }
-
-    const xScalingFactor = this.displayWidth / this.actualWidth;
-    const yScalingFactor = this.displayHeight / this.actualHeight;
-
-    if (source === ScalingSource.API) {
-      return {
-        x: Math.round(x / xScalingFactor),
-        y: Math.round(y / yScalingFactor),
-      };
-    } else {
-      return {
-        x: Math.round(x * xScalingFactor),
-        y: Math.round(y * yScalingFactor),
-      };
-    }
+  private generateUniqueFileName(prefix = 'screenshot', extension = 'png') {
+    const timestamp = new Date().toISOString().replace(/[-:.]/g, '');
+    const randomString = Math.random().toString(36).substring(2, 8);
+    return `${prefix}_${timestamp}_${randomString}.${extension}`;
   }
 
   private async executeAction(
@@ -125,14 +56,9 @@ export class ClaudeComputerService {
         case 'mouse_move':
           if (!coordinates || coordinates.length < 2)
             throw new Error('Coordinates required for mouse_move');
-          const scaledCoords = this.scaleCoordinates(
-            ScalingSource.API,
-            coordinates[0],
-            coordinates[1],
-          );
-          console.log(`Moving mouse to: ${scaledCoords.x}, ${scaledCoords.y}`);
+          console.log(`Moving mouse to: ${coordinates[0]}, ${coordinates[1]}`);
           execSync(
-            `${this.displayPrefix}xdotool mousemove --sync ${scaledCoords.x} ${scaledCoords.y}`,
+            `${this.displayPrefix}xdotool mousemove --sync ${coordinates[0]} ${coordinates[1]}`,
           );
           break;
 
@@ -160,14 +86,9 @@ export class ClaudeComputerService {
           if (!coordinates || coordinates.length < 2)
             throw new Error('Coordinates required for left_click_drag');
           const [endX, endY] = coordinates;
-          const scaledEnd = this.scaleCoordinates(
-            ScalingSource.API,
-            endX,
-            endY,
-          );
-          console.log(`Dragging to ${scaledEnd.x}, ${scaledEnd.y}`);
+          console.log(`Dragging to ${endX}, ${endY}`);
           execSync(
-            `${this.displayPrefix}xdotool mousedown 1 mousemove --sync ${scaledEnd.x} ${scaledEnd.y} mouseup 1`,
+            `${this.displayPrefix}xdotool mousedown 1 mousemove --sync ${endX} ${endY} mouseup 1`,
           );
           break;
 
@@ -190,20 +111,14 @@ export class ClaudeComputerService {
 
         case 'screenshot':
           console.log('Taking screenshot');
+          const screenshotName = this.generateUniqueFileName();
           try {
-            execSync(`${this.displayPrefix}scrot -f screenshot.png -p`);
+            execSync(`${this.displayPrefix}scrot -f ${screenshotName} -p`);
           } catch (e) {
-            execSync(`${this.displayPrefix}scrot screenshot.png`);
+            execSync(`${this.displayPrefix}scrot ${screenshotName}`);
           }
-          const scaledDims = this.scaleCoordinates(
-            ScalingSource.COMPUTER,
-            this.displayWidth,
-            this.displayHeight,
-          );
-          execSync(
-            `convert screenshot.png -resize ${scaledDims.x}x${scaledDims.y}! resized.png`,
-          );
-          return { screenshot_path: 'resized.png' };
+          await sleep(1000); // Wait for 1 second after screenshot
+          return { screenshot_path: screenshotName };
 
         case 'cursor_position':
           const position = execSync(
@@ -212,12 +127,7 @@ export class ClaudeComputerService {
           const match = position.match(/X=(\d+)\s+Y=(\d+)/);
           if (!match) throw new Error('Failed to get cursor position');
           const [x, y] = [parseInt(match[1], 10), parseInt(match[2], 10)];
-          const scaledPosition = this.scaleCoordinates(
-            ScalingSource.COMPUTER,
-            x,
-            y,
-          );
-          return { x: scaledPosition.x, y: scaledPosition.y };
+          return { x, y };
 
         default:
           throw new Error(`Unsupported action: ${action}`);
@@ -263,8 +173,8 @@ export class ClaudeComputerService {
           {
             type: 'computer_20241022',
             name: 'computer',
-            display_width_px: this.displayWidth,
-            display_height_px: this.displayHeight,
+            display_width_px: parseInt(process.env.WIDTH || '0', 10),
+            display_height_px: parseInt(process.env.HEIGHT || '0', 10),
             display_number: 1,
           },
           {
@@ -282,84 +192,96 @@ export class ClaudeComputerService {
 
       if (response.stop_reason === 'tool_use') {
         console.log('Claude requested a tool use');
-        const tool = response.content.find(
+        const tools = response.content.filter(
           (content) => content.type === 'tool_use',
         );
-        messages.push({
-          role: 'assistant',
-          content: [
-            {
-              id: tool.id,
-              input: tool.input,
-              name: tool.name,
-              type: tool.type,
-            },
-          ],
+
+        const text = response.content.filter((x) => {
+          return x.type === 'text';
         });
 
-        const result = await this.executeAction(
-          // @ts-expect-error
-          tool.input.action,
-          // @ts-expect-error
-          tool.input.text,
-          // @ts-expect-error
-          tool.input.coordinate,
-        );
+        console.log('Claude says: ' + text[0].text);
+        console.log('Tools requested: ' + JSON.stringify(tools, null, 2));
 
-        if (result.screenshot_path) {
-          console.log('Sending screenshot result back to Claude');
-          messages.push({
-            role: 'user',
-            content: [
-              {
-                type: 'tool_result',
-                tool_use_id: tool.id,
+        await Promise.all(
+          tools.map(async (tool) => {
+            messages.push({
+              role: 'assistant',
+              content: [
+                {
+                  id: tool.id,
+                  input: tool.input,
+                  name: tool.name,
+                  type: tool.type,
+                },
+              ],
+            });
+
+            const result = await this.executeAction(
+              // @ts-expect-error
+              tool.input.action,
+              // @ts-expect-error
+              tool.input.text,
+              // @ts-expect-error
+              tool.input.coordinate,
+            );
+
+            if (result.screenshot_path) {
+              console.log('Sending screenshot result back to Claude');
+              messages.push({
+                role: 'user',
                 content: [
                   {
-                    type: 'image',
-                    source: {
-                      media_type: 'image/png',
-                      data: fs
-                        .readFileSync(result.screenshot_path)
-                        .toString('base64'),
-                      type: 'base64',
-                    },
+                    type: 'tool_result',
+                    tool_use_id: tool.id,
+                    content: [
+                      {
+                        type: 'image',
+                        source: {
+                          media_type: 'image/png',
+                          data: fs
+                            .readFileSync(result.screenshot_path)
+                            .toString('base64'),
+                          type: 'base64',
+                        },
+                      },
+                    ],
                   },
                 ],
-              },
-            ],
-          });
-        } else if (result.x !== undefined && result.y !== undefined) {
-          console.log(
-            `Sending cursor position result back to Claude: ${result.x}, ${result.y}`,
-          );
-          messages.push({
-            role: 'user',
-            content: [
-              {
-                type: 'tool_result',
-                tool_use_id: tool.id,
+              });
+            } else if (result.x !== undefined && result.y !== undefined) {
+              console.log(
+                `Sending cursor position result back to Claude: ${result.x}, ${result.y}`,
+              );
+              messages.push({
+                role: 'user',
                 content: [
                   {
-                    type: 'text',
-                    text: `Cursor position: ${result.x}, ${result.y}`,
+                    type: 'tool_result',
+                    tool_use_id: tool.id,
+                    content: [
+                      {
+                        type: 'text',
+                        text: `Cursor position: ${result.x}, ${result.y}`,
+                      },
+                    ],
                   },
                 ],
-              },
-            ],
-          });
-        } else {
-          console.log('Sending tool result back to Claude');
-          messages.push({
-            role: 'user',
-            content: [
-              {
-                type: 'tool_result',
-                tool_use_id: tool.id,
-              },
-            ],
-          });
-        }
+              });
+            } else {
+              console.log('Sending tool result back to Claude');
+              messages.push({
+                role: 'user',
+                content: [
+                  {
+                    type: 'tool_result',
+                    tool_use_id: tool.id,
+                  },
+                ],
+              });
+            }
+          }),
+        );
       } else if (
         response.stop_reason === 'stop_sequence' ||
         response.stop_reason === 'end_turn'
