@@ -7,7 +7,6 @@ echo "starting vnc"
     -wait 50 \
     -rfbport 5900 \
     -nopw \
-    -viewonly \
     2>/tmp/x11vnc_stderr.log) &
 
 x11vnc_pid=$!

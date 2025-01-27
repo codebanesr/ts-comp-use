@@ -59,6 +59,11 @@ RUN git clone --branch v1.5.0 https://github.com/novnc/noVNC.git /opt/noVNC && \
 RUN curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared && \
     chmod +x /usr/local/bin/cloudflared
 
+# Install Node.js and pnpm
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    npm install -g pnpm
+
 # Setup user
 ENV USERNAME=computeruse
 ENV HOME=/home/$USERNAME
@@ -70,6 +75,12 @@ WORKDIR $HOME
 
 # Copy scripts
 COPY --chown=$USERNAME:$USERNAME computer_use/ $HOME/
+
+# Copy NestJS app
+COPY --chown=$USERNAME:$USERNAME . $HOME/nestjs-app/
+
+# Install NestJS app dependencies using pnpm
+RUN cd $HOME/nestjs-app && pnpm install
 
 RUN ls -sail
 
