@@ -5,7 +5,7 @@ import { Injectable } from '@nestjs/common';
 import * as fs from 'fs';
 import { chromium, Browser, Page, BrowserContext } from 'playwright';
 import Anthropic from '@anthropic-ai/sdk';
-import { MessageParam } from '@anthropic-ai/sdk/resources';
+import { ContentBlockParam, MessageParam } from '@anthropic-ai/sdk/resources';
 import { sleep } from '@anthropic-ai/sdk/core';
 
 const anthropic = new Anthropic({
@@ -141,8 +141,11 @@ export class BrowserService {
         case 'key':
           if (text == 'Return') {
             await this.page.keyboard.press('Enter');
-          } else if (text == 'Down') {
-            await this.page.keyboard.press('ArrowDown');
+          } else if (text == 'Down' || text == 'Page_Down') {
+            // do this 5 times atleast
+            for (let i = 0; i < 15; i++) {
+              await this.page.keyboard.press('ArrowDown');
+            }
           } else if (text == 'Up') {
             await this.page.keyboard.press('ArrowUp');
           } else if (text == 'Left') {
@@ -200,7 +203,7 @@ export class BrowserService {
           const screenshotName = this.generateUniqueFileName();
           await this.page.screenshot({
             path: screenshotName,
-            fullPage: true,
+            fullPage: false,
           });
           await sleep(200);
           return { screenshot_path: screenshotName };
@@ -238,6 +241,23 @@ export class BrowserService {
 
     let response: Anthropic.Beta.Messages.BetaMessage & {
       _request_id?: string | null;
+    };
+
+    const removeOldestToolUseAndResult = () => {
+      while (messages.length > 8) {
+        const index = messages.findIndex(
+          (message) =>
+            message.role === 'assistant' &&
+            (message.content[0] as ContentBlockParam)?.type === 'tool_use',
+        );
+
+        if (index !== -1) {
+          // Remove the tool_use and the corresponding tool_result
+          messages.splice(index, 2); // Remove both the tool_use and tool_result
+        } else {
+          break; // No more tool_use pairs to remove
+        }
+      }
     };
 
     do {
@@ -324,6 +344,9 @@ export class BrowserService {
               ],
             });
           }
+
+          // Ensure the messages array does not exceed length 8
+          removeOldestToolUseAndResult();
         }
       }
     } while (response.stop_reason === 'tool_use');
