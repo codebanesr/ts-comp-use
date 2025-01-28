@@ -1,5 +1,4 @@
-import { Controller, Post, Body, Res, Get } from '@nestjs/common';
-import { Response } from 'express';
+import { Controller, Post, Body, Get } from '@nestjs/common';
 import { BrowserService } from './browser.service';
 
 @Controller('browser')

@@ -3,7 +3,7 @@ dotenv.config();
 
 import { Injectable } from '@nestjs/common';
 import * as fs from 'fs';
-import { chromium, Browser, Page } from 'playwright';
+import { chromium, Browser, Page, BrowserContext } from 'playwright';
 import Anthropic from '@anthropic-ai/sdk';
 import { MessageParam } from '@anthropic-ai/sdk/resources';
 import { sleep } from '@anthropic-ai/sdk/core';
@@ -34,18 +34,38 @@ export class BrowserService {
   private currentMouseX = 0;
   private currentMouseY = 0;
 
+  private context: BrowserContext;
+
   async openBrowser() {
     this.browser = await chromium.launch({ headless: false });
-    this.page = await this.browser.newPage();
-    const width = parseInt(process.env.WIDTH || '1366', 10);
-    const height = parseInt(process.env.HEIGHT || '768', 10);
-    await this.page.setViewportSize({ width, height });
 
+    // Configure video recording
+    const videoDirectory = 'recordings';
+    if (!fs.existsSync(videoDirectory)) {
+      fs.mkdirSync(videoDirectory);
+    }
+
+    this.context = await this.browser.newContext({
+      viewport: {
+        width: parseInt(process.env.WIDTH || '1366', 10),
+        height: parseInt(process.env.HEIGHT || '768', 10),
+      },
+      recordVideo: {
+        dir: videoDirectory,
+        size: {
+          width: parseInt(process.env.WIDTH || '1366', 10),
+          height: parseInt(process.env.HEIGHT || '768', 10),
+        },
+      },
+    });
+
+    this.page = await this.context.newPage();
     await this.page.goto('https://google.com');
     await sleep(2000);
   }
 
   async closeBrowser() {
+    await this.context.close(); // Finalizes video recording
     await this.browser.close();
   }
 
@@ -74,7 +94,16 @@ export class BrowserService {
         case 'key':
           if (text == 'Return') {
             await this.page.keyboard.press('Enter');
+          } else if (text == 'Down') {
+            await this.page.keyboard.press('ArrowDown');
+          } else if (text == 'Up') {
+            await this.page.keyboard.press('ArrowUp');
+          } else if (text == 'Left') {
+            await this.page.keyboard.press('ArrowLeft');
+          } else if (text == 'Right') {
+            await this.page.keyboard.press('ArrowRight');
           } else {
+            console.log({ 'unmapped key': text });
             await this.page.keyboard.press(text);
           }
           break;
@@ -126,7 +155,7 @@ export class BrowserService {
             path: screenshotName,
             fullPage: true,
           });
-          await sleep(1000);
+          await sleep(200);
           return { screenshot_path: screenshotName };
 
         case 'cursor_position':
