@@ -45,7 +45,6 @@ export class BrowserService {
       args: [
         '--disable-blink-features=AutomationControlled',
         '--disable-infobars',
-        '--window-size=1366,768',
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
@@ -109,9 +108,6 @@ export class BrowserService {
       waitUntil: 'domcontentloaded',
       timeout: 30000,
     });
-
-    // Human-like delay with randomness
-    await this.page.waitForTimeout(Math.random() * 2000 + 1000);
   }
 
   async closeBrowser() {
@@ -145,20 +141,36 @@ export class BrowserService {
           if (text == 'Return') {
             await this.page.keyboard.press('Enter');
           } else if (text == 'Down' || text == 'Page_Down') {
-            // do this 5 times atleast
-            for (let i = 0; i < 5; i++) {
-              await this.page.keyboard.press('ArrowDown');
-            }
+            // do this 5 times at least
+            await this.page.keyboard.press('ArrowDown');
           } else if (text == 'Up') {
             await this.page.keyboard.press('ArrowUp');
           } else if (text == 'Left') {
             await this.page.keyboard.press('ArrowLeft');
           } else if (text == 'Right') {
             await this.page.keyboard.press('ArrowRight');
-          } else {
-            console.log({ 'unmapped key': text });
-
-            // await this.page.keyboard.press(text);
+          } else if (text === 'ctrl+a') {
+            await this.page.keyboard.press('ControlOrMeta+A');
+          } else if (text === 'ctrl+c') {
+            await this.page.keyboard.press('Control+C');
+          } else if (text === 'ctrl+v') {
+            await this.page.keyboard.press('Control+V');
+          } else if (text === 'ctrl+x') {
+            await this.page.keyboard.press('Control+X');
+          } else if (text === 'ctrl+z') {
+            await this.page.keyboard.press('Control+Z');
+          } else if (text === 'alt+F4') {
+            await this.page.keyboard.press('Alt+F4');
+          } else if (text === 'ctrl+Delete') {
+            await this.page.keyboard.press('ControlOrMeta+Delete');
+          }
+          // try to execute the key
+          else {
+            try {
+              await this.page.keyboard.press(text);
+            } catch (error) {
+              console.log({ 'could not execute, unmapped key': text });
+            }
           }
           break;
 
@@ -209,7 +221,6 @@ export class BrowserService {
             path: screenshotName,
             fullPage: false,
           });
-          await sleep(200);
           return { screenshot_path: screenshotName };
 
         case 'cursor_position':
@@ -221,7 +232,12 @@ export class BrowserService {
         default:
           throw new Error(`Unsupported action: ${action}`);
       }
-      console.log(`Action ${action} completed successfully`);
+
+      console.log(
+        `Action ${action} completed successfully, sleep for 1 second`,
+      );
+      await sleep(1000);
+
       return { success: true };
     } catch (error) {
       console.error(`Error executing action ${action}:`, error);
@@ -276,23 +292,23 @@ export class BrowserService {
             display_height_px: parseInt(process.env.HEIGHT || '768', 10),
             display_number: 1,
           },
-          {
-            type: 'custom',
-            description:
-              'Call this whenever you want to pause and ask for human input. For example when inputting in youtube search bar',
-            name: 'human',
-            input_schema: {
-              properties: {
-                prompt: {
-                  title: 'Prompt',
-                  type: 'string',
-                  description: 'The prompt to display to the user.',
-                  default: 'Please provide your input.',
-                },
-              },
-              type: 'object',
-            },
-          },
+          // {
+          //   type: 'custom',
+          //   description:
+          //     'Call this whenever you want to pause and ask for human input. For example when inputting in youtube search bar',
+          //   name: 'human',
+          //   input_schema: {
+          //     properties: {
+          //       prompt: {
+          //         title: 'Prompt',
+          //         type: 'string',
+          //         description: 'The prompt to display to the user.',
+          //         default: 'Please provide your input.',
+          //       },
+          //     },
+          //     type: 'object',
+          //   },
+          // },
         ],
         messages: messages,
         betas: ['computer-use-2024-10-22'],
@@ -393,7 +409,7 @@ export class BrowserService {
               });
             }
           }
-          // Ensure the messages array does not exceed length 8
+          // should be replaced with summarization to handle long contexts
           removeOldestToolUseAndResult();
         }
       }
