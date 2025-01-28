@@ -37,7 +37,17 @@ export class BrowserService {
   private context: BrowserContext;
 
   async openBrowser() {
-    this.browser = await chromium.launch({ headless: false });
+    this.browser = await chromium.launch({
+      headless: false,
+      args: [
+        '--disable-blink-features=AutomationControlled',
+        '--disable-infobars',
+        '--window-size=1366,768',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+      ],
+    });
 
     // Configure video recording
     const videoDirectory = 'recordings';
@@ -45,23 +55,60 @@ export class BrowserService {
       fs.mkdirSync(videoDirectory);
     }
 
+    // Get updated user agent
+    const userAgent =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36';
+
     this.context = await this.browser.newContext({
       viewport: {
         width: parseInt(process.env.WIDTH || '1366', 10),
         height: parseInt(process.env.HEIGHT || '768', 10),
       },
+      userAgent: userAgent,
+      permissions: [],
+      geolocation: undefined,
+      locale: 'en-US',
+      timezoneId: 'America/New_York',
       recordVideo: {
         dir: videoDirectory,
         size: {
-          width: parseInt(process.env.WIDTH || '1366', 10),
-          height: parseInt(process.env.HEIGHT || '768', 10),
+          width: 1366,
+          height: 768,
         },
       },
+      // Add evasion measures
+      bypassCSP: true,
+      javaScriptEnabled: true,
+      ignoreHTTPSErrors: true,
+      // Mask as regular Chrome
+      isMobile: false,
+      hasTouch: false,
+      deviceScaleFactor: 1,
+    });
+
+    // Additional anti-detection measures
+    await this.context.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => false,
+      });
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3],
+      });
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en'],
+      });
     });
 
     this.page = await this.context.newPage();
-    await this.page.goto('https://google.com');
-    await sleep(2000);
+
+    // Randomize navigation timing
+    await this.page.goto('https://google.com', {
+      waitUntil: 'domcontentloaded',
+      timeout: 30000,
+    });
+
+    // Human-like delay with randomness
+    await this.page.waitForTimeout(Math.random() * 2000 + 1000);
   }
 
   async closeBrowser() {
