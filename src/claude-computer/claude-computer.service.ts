@@ -40,7 +40,7 @@ const SYSTEM_PROMPT_LINUX = `<SYSTEM_CAPABILITY>
 * You are utilising an Ubuntu virtual machine using {platform.machine()} architecture with internet access.
 * You can feel free to install Ubuntu applications with your bash tool. Use curl instead of wget.
 * To open firefox, please just click on the firefox icon.  Note, firefox-esr is what is installed on your system.
-* Using bash tool you can start GUI applications, use a subshell. For example "(xterm &)". GUI apps run with bash tool will appear within your desktop environment, but they may take some time to appear. Take a screenshot to confirm it did.
+* Using bash tool you can start GUI applications, but you need to set export DISPLAY=:1 and use a subshell. For example "(DISPLAY=:1 xterm &)". GUI apps run with bash tool will appear within your desktop environment, but they may take some time to appear. Take a screenshot to confirm it did.
 * When using your bash tool with commands that are expected to output very large quantities of text, redirect into a tmp file and use str_replace_editor or \`grep -n -B <lines before> -A <lines after> <query> <filename>\` to confirm output.
 * When viewing a page it can be helpful to zoom out so that you can see everything on the page.  Either that, or make sure you scroll down to see everything before deciding something isn't available.
 * When using your computer function calls, they take a while to run and send back to you.  Where possible/feasible, try to chain multiple of these calls all into one function calls request.
@@ -87,6 +87,12 @@ export class ClaudeComputerService {
     this.displayPrefix = `DISPLAY=:${displayNum} `;
   }
 
+  private generateUniqueFileName(prefix = 'screenshot', extension = 'png') {
+    const timestamp = new Date().toISOString().replace(/[-:.]/g, '');
+    const randomString = Math.random().toString(36).substring(2, 8);
+    return `${prefix}_${timestamp}_${randomString}.${extension}`;
+  }
+
   private async executeActionLinux(
     action: string,
     text: string,
@@ -94,7 +100,6 @@ export class ClaudeComputerService {
   ) {
     try {
       console.log(`Starting action: ${action}`);
-      let c;
       switch (action) {
         case 'mouse_move':
           if (!coordinates || coordinates.length < 2)
@@ -154,13 +159,12 @@ export class ClaudeComputerService {
 
         case 'screenshot':
           console.log('Taking screenshot');
-          let screenshotName = generateUniqueFileName();
+          const screenshotName = this.generateUniqueFileName();
           try {
             execSync(`${this.displayPrefix}scrot -f ${screenshotName} -p`);
           } catch (e) {
             execSync(`${this.displayPrefix}scrot ${screenshotName}`);
           }
-          screenshotName = generateUniqueFileName(); // Ensure it generates a valid file name
           await sleep(1000); // Wait for 1 second after screenshot
           return { screenshot_path: screenshotName };
 
