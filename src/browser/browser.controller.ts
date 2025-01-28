@@ -6,22 +6,16 @@ import { BrowserService } from './browser.service';
 export class BrowserController {
   constructor(private readonly browserService: BrowserService) {}
 
-  @Post('capture-screenshot')
-  async captureScreenshot(@Body('url') url: string, @Res() res: Response) {
-    if (!url) {
-      return res.status(400).send('URL is required');
-    }
+  @Post('interact')
+  async interactWithClaude(@Body('message') message: string) {
+    await this.browserService.openBrowser();
+    const result = await this.browserService.interactWithClaude(message);
 
-    try {
-      const screenshotBuffer = await this.browserService.captureScreenshot(url);
-      res.setHeader('Content-Type', 'image/png');
-      res.send(screenshotBuffer);
-    } catch (error) {
-      res.status(500).send('Failed to capture screenshot');
-    }
+    await this.browserService.closeBrowser();
+    return result;
   }
 
-  @Get()
+  @Get('check')
   async checkStatus() {
     return { success: true };
   }
