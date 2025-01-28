@@ -1,6 +1,5 @@
 import { NestFactory } from '@nestjs/core';
 import { ScriptsModule } from './scripts/scripts.module';
-import { ScriptsService } from './scripts/scripts.service';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
