@@ -10,6 +10,26 @@ import Anthropic from '@anthropic-ai/sdk';
 import { MessageParam } from '@anthropic-ai/sdk/resources';
 import { sleep } from '@anthropic-ai/sdk/core';
 
+// Define return type interfaces
+interface SuccessResult {
+  success: boolean;
+  screenshot_path?: string;
+}
+
+interface ScreenshotResult {
+  screenshot_path?: string;
+}
+
+interface CursorPositionResult {
+  x: number;
+  y: number;
+  screenshot_path?: string;
+}
+
+// Union type for all possible return types
+type ActionResult = SuccessResult | ScreenshotResult | CursorPositionResult;
+
+
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
@@ -70,6 +90,7 @@ export class ClaudeComputerService {
   ) {
     try {
       console.log(`Starting action: ${action}`);
+      let c;
       switch (action) {
         case 'mouse_move':
           if (!coordinates || coordinates.length < 2)
@@ -180,6 +201,7 @@ export class ClaudeComputerService {
             throw new Error('Coordinates required for mouse_move');
           console.log(`Moving mouse to: ${coordinates[0]}, ${coordinates[1]}`);
           c = `cliclick m:${coordinates[0]},${coordinates[1]}`
+          console.log(c)
           execSync(c);
           break;
 
@@ -225,6 +247,7 @@ export class ClaudeComputerService {
             c = c1
           if (text.toLowerCase() == 'return')
             c = 'cliclick kp:enter'
+          console.log(c)
           execSync(c);
           break;
 
@@ -233,12 +256,15 @@ export class ClaudeComputerService {
           console.log(`Typing text: ${text}`);
           const escapedText = shellEscape([text]);
           c = `cliclick t:${escapedText}`
+          console.log(c)
           execSync(c);
           break;
 
         case 'left_click':
           console.log('Performing left click');
-          execSync(`cliclick c:.`);
+          c = `cliclick c:.`
+          console.log(c)
+          execSync(c);
           break;
 
         case 'left_click_drag':
@@ -246,22 +272,30 @@ export class ClaudeComputerService {
             throw new Error('Coordinates required for left_click_drag');
           const [endX, endY] = coordinates;
           console.log(`Dragging to ${endX}, ${endY}`);
-          execSync(`cliclick dd:. m:${endX},${endY} du:.`);
+          c = `cliclick dd:. m:${endX},${endY} du:.`
+          console.log(c)
+          execSync(c);
           break;
 
         case 'right_click':
           console.log('Performing right click');
-          execSync(`cliclick rc:.`);
+          c = `cliclick rc:.`
+          console.log(c)
+          execSync(c);
           break;
 
         case 'middle_click':
           console.log('Performing middle click');
-          execSync(`cliclick mc:.`);
+          c = `cliclick mc:.`
+          console.log(c)
+          execSync(c);
           break;
 
         case 'double_click':
           console.log('Performing double click');
-          execSync(`cliclick dc:.`);
+          c = `cliclick dc:.`
+          console.log(c)
+          execSync(c);
           break;
 
         case 'screenshot':
@@ -269,7 +303,8 @@ export class ClaudeComputerService {
           const screenshotName = this.generateUniqueFileName(); // Ensure it generates a valid file name
           try {
             // Use screencapture command for macOS
-            execSync(`screencapture -x ${screenshotName}`);
+            c = `screencapture -x ${screenshotName}`
+            execSync(c);
           } catch (e) {
             console.error('Failed to take screenshot:', e.message);
             throw e; // Rethrow the error if needed
@@ -294,6 +329,148 @@ export class ClaudeComputerService {
       throw error;
     }
   }
+
+  private async executeActionMac(
+    action: string,
+    text: string,
+    coordinates?: number[],
+  ): Promise<ActionResult> {
+    try {
+      console.log(`Starting action: ${action}`);
+
+      // Helper function to execute cliclick commands
+      const runCliclick = (cmd: string) => {
+        console.log(`Running command: ${cmd}`);
+        execSync(`cliclick ${cmd}`)
+      };
+
+      switch (action) {
+        case 'mouse_move':
+          if (!coordinates || coordinates.length < 2)
+            throw new Error('Coordinates required for mouse_move');
+          console.log(`Moving mouse to: ${coordinates[0]}, ${coordinates[1]}`);
+          runCliclick(`m:${coordinates[0]},${coordinates[1]}`);
+          break;
+
+        case 'key':
+          console.log(`Pressing key: ${text}`);
+          // Convert common key names to cliclick format
+          const keyMap: { [key: string]: string } = {
+            'Return': 'kp:return',
+            'Tab': 'kp:tab',
+            'space': 'kp:space',
+            'Left': 'kp:arrow-left',
+            'Right': 'kp:arrow-right',
+            'Up': 'kp:arrow-up',
+            'Down': 'kp:arrow-down',
+            'Escape': 'kp:esc',
+            'Delete': 'kp:delete',
+            'BackSpace': 'kp:backspace',
+            'Home': 'kp:home',
+            'End': 'kp:end',
+            'Page_Up': 'kp:page-up',
+            'Page_Down': 'kp:page-down',
+            'command+space':"kd:cmd kp:space ku:cmd"
+          };
+
+          // cliclick kd:cmd kp:space ku:cmd
+          if (text in keyMap) {
+            runCliclick(keyMap[text]);
+          } else {
+            // For regular characters, use the type command
+            runCliclick(`t:${text}`);
+          }
+          break;
+
+        case 'type':
+          console.log(`Typing text: ${text}`);
+          // Split into characters and type them individually to ensure reliability
+          const chars = text.split('');
+          for (const char of chars) {
+            runCliclick(`t:${char}`);
+            await sleep(10); // Small delay between characters
+          }
+          break;
+
+        case 'left_click':
+          console.log('Performing left click');
+          runCliclick('c:.');
+          break;
+
+        case 'left_click_drag':
+          if (!coordinates || coordinates.length < 2)
+            throw new Error('Coordinates required for left_click_drag');
+          const [endX, endY] = coordinates;
+          console.log(`Dragging to ${endX}, ${endY}`);
+          // Get current position first
+          const currentPos = await this.getCurrentPosition();
+          runCliclick(`dd:${currentPos.x},${currentPos.y},${endX},${endY}`);
+          break;
+
+        case 'right_click':
+          console.log('Performing right click');
+          runCliclick('rc:.');
+          break;
+
+        case 'middle_click':
+          console.log('Performing middle click');
+          // Note: cliclick doesn't directly support middle click
+          // You might need to use alternative methods or third-party tools
+          console.warn('Middle click not directly supported in cliclick');
+          break;
+
+        case 'double_click':
+          console.log('Performing double click');
+          runCliclick('dc:.');
+          break;
+
+        case 'screenshot':
+          let c;
+          console.log('Taking screenshot');
+          const screenshotName = this.generateUniqueFileName(); // Ensure it generates a valid file name
+          try {
+            // Use screencapture command for macOS
+            c = `screencapture -x ${screenshotName}`
+            execSync(c);
+          } catch (e) {
+            console.error('Failed to take screenshot:', e.message);
+            throw e; // Rethrow the error if needed
+          }
+          await sleep(1000); // Wait for 1 second after screenshot
+          return { screenshot_path: screenshotName };
+
+        case 'cursor_position':
+          return this.getCurrentPosition();
+
+        default:
+          throw new Error(`Unsupported action: ${action}`);
+      }
+
+      console.log(`Action ${action} completed successfully`);
+      return { success: true };
+    } catch (error) {
+      console.error(`Error executing action ${action}:`, error);
+      throw error;
+    }
+  }
+
+  // Helper method to get current cursor position
+  private async getCurrentPosition(): Promise<{ x: number, y: number }> {
+    try {
+      const output = execSync('cliclick p').toString();
+      const match = output.match(/(\d+),(\d+)/);
+      if (!match) throw new Error('Failed to get cursor position');
+      return {
+        x: parseInt(match[1], 10),
+        y: parseInt(match[2], 10)
+      };
+    } catch (error) {
+      console.error('Error getting cursor position:', error);
+      throw error;
+    }
+  }
+
+
 
   async interactWithClaude(userPrompt: string) {
     console.log('Starting interaction with Claude');
@@ -372,7 +549,7 @@ export class ClaudeComputerService {
           });
 
           // Execute action
-          const result = await this.executeAction(
+          const result: ActionResult = await this.executeActionMac(
             // @ts-expect-error
             tool.input.action,
 
