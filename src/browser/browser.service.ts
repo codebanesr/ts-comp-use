@@ -42,6 +42,7 @@ export class BrowserService {
     await this.page.setViewportSize({ width, height });
 
     await this.page.goto('https://google.com');
+    await sleep(2000);
   }
 
   async closeBrowser() {
@@ -60,7 +61,7 @@ export class BrowserService {
     coordinates?: number[],
   ) {
     try {
-      console.log(`Starting action: ${action}`);
+      console.log({ action, text, coordinates });
       switch (action) {
         case 'mouse_move':
           if (!coordinates || coordinates.length < 2)
@@ -71,7 +72,11 @@ export class BrowserService {
           break;
 
         case 'key':
-          await this.page.keyboard.press(text);
+          if (text == 'Return') {
+            await this.page.keyboard.press('Enter');
+          } else {
+            await this.page.keyboard.press(text);
+          }
           break;
 
         case 'type':
@@ -204,8 +209,6 @@ export class BrowserService {
             tool.input.coordinate,
           );
 
-          // take a break here;
-          await sleep(300);
           if (result.screenshot_path) {
             messages.push({
               role: 'user',
