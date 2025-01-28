@@ -36,7 +36,7 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-/* const SYSTEM_PROMPT = `<SYSTEM_CAPABILITY>
+const SYSTEM_PROMPT_LINUX = `<SYSTEM_CAPABILITY>
 * You are utilising an Ubuntu virtual machine using {platform.machine()} architecture with internet access.
 * You can feel free to install Ubuntu applications with your bash tool. Use curl instead of wget.
 * To open firefox, please just click on the firefox icon.  Note, firefox-esr is what is installed on your system.
@@ -50,11 +50,11 @@ const anthropic = new Anthropic({
 <IMPORTANT>
 * When using Firefox, if a startup wizard appears, IGNORE IT.  Do not even click "skip this step".  Instead, click on the address bar where it says "Search or enter address", and enter the appropriate search term or URL there.
 * If the item you are looking at is a pdf, if after taking a single screenshot of the pdf it seems that you want to read the entire document instead of trying to continue to read the pdf from your screenshots + navigation, determine the URL, use curl to download the pdf, install and use pdftotext to convert it to a text file, and then read that text file directly with your StrReplaceEditTool.
-</IMPORTANT>`; */
+</IMPORTANT>`;
 
 
 
-const SYSTEM_PROMPT = `<SYSTEM_CAPABILITY>
+const SYSTEM_PROMPT_MAC = `<SYSTEM_CAPABILITY>
 * You are utilizing a macOS virtual machine using {platform.machine()} architecture with internet access.
 * You can feel free to install macOS applications with your terminal tool using Homebrew. Use curl instead of wget where applicable.
 * To open Firefox, press Command (⌘) + Space, type "Firefox," and click on firefox to open. Note, Firefox is the installed version on your system.
@@ -72,6 +72,11 @@ const SYSTEM_PROMPT = `<SYSTEM_CAPABILITY>
 * If the item you are looking at is a PDF, and after taking a single screenshot of the PDF it seems that you want to read the entire document, instead of trying to continue to read the PDF from your screenshots + navigation, determine the URL, use curl to download the PDF, install and use \`pdftotext\` to convert it to a text file, and then read that text file directly with your preferred text processing tools.
 </IMPORTANT>`;
 
+function generateUniqueFileName(prefix = 'screenshot', extension = 'png') {
+  const timestamp = new Date().toISOString().replace(/[-:.]/g, '');
+  const randomString = Math.random().toString(36).substring(2, 8);
+  return `${prefix}_${timestamp}_${randomString}.${extension}`;
+}
 
 @Injectable()
 export class ClaudeComputerService {
@@ -82,259 +87,102 @@ export class ClaudeComputerService {
     this.displayPrefix = `DISPLAY=:${displayNum} `;
   }
 
-  private generateUniqueFileName(prefix = 'screenshot', extension = 'png') {
-    const timestamp = new Date().toISOString().replace(/[-:.]/g, '');
-    const randomString = Math.random().toString(36).substring(2, 8);
-    return `${prefix}_${timestamp}_${randomString}.${extension}`;
+  private async executeActionLinux(
+    action: string,
+    text: string,
+    coordinates?: number[],
+  ) {
+    try {
+      console.log(`Starting action: ${action}`);
+      let c;
+      switch (action) {
+        case 'mouse_move':
+          if (!coordinates || coordinates.length < 2)
+            throw new Error('Coordinates required for mouse_move');
+          console.log(`Moving mouse to: ${coordinates[0]}, ${coordinates[1]}`);
+          execSync(
+            `${this.displayPrefix}xdotool mousemove --sync ${coordinates[0]} ${coordinates[1]}`,
+          );
+          break;
+
+        case 'key':
+          console.log(`Pressing key: ${text}`);
+          execSync(
+            `${this.displayPrefix}xdotool key -- ${shellEscape([text])}`,
+          );
+          break;
+
+        case 'type':
+          console.log(`Typing text: ${text}`);
+          const escapedText = shellEscape([text]);
+          execSync(
+            `${this.displayPrefix}xdotool type --delay 0 -- ${escapedText}`,
+          );
+          break;
+
+        case 'left_click':
+          console.log('Performing left click');
+          execSync(`${this.displayPrefix}xdotool click 1`);
+          break;
+
+        case 'left_click_drag':
+          if (!coordinates || coordinates.length < 2)
+            throw new Error('Coordinates required for left_click_drag');
+          const [endX, endY] = coordinates;
+          console.log(`Dragging to ${endX}, ${endY}`);
+          execSync(
+            `${this.displayPrefix}xdotool mousedown 1 mousemove --sync ${endX} ${endY} mouseup 1`,
+          );
+          break;
+
+        case 'right_click':
+          console.log('Performing right click');
+          execSync(`${this.displayPrefix}xdotool click 3`);
+          break;
+
+        case 'middle_click':
+          console.log('Performing middle click');
+          execSync(`${this.displayPrefix}xdotool click 2`);
+          break;
+
+        case 'double_click':
+          console.log('Performing double click');
+          execSync(
+            `${this.displayPrefix}xdotool click --repeat 2 --delay 500 1`,
+          );
+          break;
+
+        case 'screenshot':
+          console.log('Taking screenshot');
+          let screenshotName = generateUniqueFileName();
+          try {
+            execSync(`${this.displayPrefix}scrot -f ${screenshotName} -p`);
+          } catch (e) {
+            execSync(`${this.displayPrefix}scrot ${screenshotName}`);
+          }
+          screenshotName = generateUniqueFileName(); // Ensure it generates a valid file name
+          await sleep(1000); // Wait for 1 second after screenshot
+          return { screenshot_path: screenshotName };
+
+        case 'cursor_position':
+          const position = execSync(
+            `${this.displayPrefix}xdotool getmouselocation --shell`,
+          ).toString();
+          const match = position.match(/X=(\d+)\s+Y=(\d+)/);
+          if (!match) throw new Error('Failed to get cursor position');
+          const [x, y] = [parseInt(match[1], 10), parseInt(match[2], 10)];
+          return { x, y };
+
+        default:
+          throw new Error(`Unsupported action: ${action}`);
+      }
+      console.log(`Action ${action} completed successfully`);
+      return { success: true };
+    } catch (error) {
+      console.error(`Error executing action ${action}:`, error);
+      throw error;
+    }
   }
-
-  /*   private async executeActionLinux(
-      action: string,
-      text: string,
-      coordinates?: number[],
-    ) {
-      try {
-        console.log(`Starting action: ${action}`);
-        let c;
-        switch (action) {
-          case 'mouse_move':
-            if (!coordinates || coordinates.length < 2)
-              throw new Error('Coordinates required for mouse_move');
-            console.log(`Moving mouse to: ${coordinates[0]}, ${coordinates[1]}`);
-            execSync(
-              `${this.displayPrefix}xdotool mousemove --sync ${coordinates[0]} ${coordinates[1]}`,
-            );
-            break;
-  
-          case 'key':
-            console.log(`Pressing key: ${text}`);
-            execSync(
-              `${this.displayPrefix}xdotool key -- ${shellEscape([text])}`,
-            );
-            break;
-  
-          case 'type':
-            console.log(`Typing text: ${text}`);
-            const escapedText = shellEscape([text]);
-            execSync(
-              `${this.displayPrefix}xdotool type --delay 0 -- ${escapedText}`,
-            );
-            break;
-  
-          case 'left_click':
-            console.log('Performing left click');
-            execSync(`${this.displayPrefix}xdotool click 1`);
-            break;
-  
-          case 'left_click_drag':
-            if (!coordinates || coordinates.length < 2)
-              throw new Error('Coordinates required for left_click_drag');
-            const [endX, endY] = coordinates;
-            console.log(`Dragging to ${endX}, ${endY}`);
-            execSync(
-              `${this.displayPrefix}xdotool mousedown 1 mousemove --sync ${endX} ${endY} mouseup 1`,
-            );
-            break;
-  
-          case 'right_click':
-            console.log('Performing right click');
-            execSync(`${this.displayPrefix}xdotool click 3`);
-            break;
-  
-          case 'middle_click':
-            console.log('Performing middle click');
-            execSync(`${this.displayPrefix}xdotool click 2`);
-            break;
-  
-          case 'double_click':
-            console.log('Performing double click');
-            execSync(
-              `${this.displayPrefix}xdotool click --repeat 2 --delay 500 1`,
-            );
-            break;
-  
-          case 'screenshot':
-            console.log('Taking screenshot');
-            let screenshotName = this.generateUniqueFileName();
-            try {
-              execSync(`${this.displayPrefix}scrot -f ${screenshotName} -p`);
-            } catch (e) {
-              execSync(`${this.displayPrefix}scrot ${screenshotName}`);
-            }
-            screenshotName = this.generateUniqueFileName(); // Ensure it generates a valid file name
-            try {
-              // Use screencapture command for macOS
-              execSync(`screencapture -x ${screenshotName}`);
-            } catch (e) {
-              console.error('Failed to take screenshot:', e.message);
-              throw e; // Rethrow the error if needed
-            }
-            await sleep(1000); // Wait for 1 second after screenshot
-            return { screenshot_path: screenshotName };
-  
-          case 'cursor_position':
-            const position = execSync(
-              `${this.displayPrefix}xdotool getmouselocation --shell`,
-            ).toString();
-            const match = position.match(/X=(\d+)\s+Y=(\d+)/);
-            if (!match) throw new Error('Failed to get cursor position');
-            const [x, y] = [parseInt(match[1], 10), parseInt(match[2], 10)];
-            return { x, y };
-  
-          default:
-            throw new Error(`Unsupported action: ${action}`);
-        }
-        console.log(`Action ${action} completed successfully`);
-        return { success: true };
-      } catch (error) {
-        console.error(`Error executing action ${action}:`, error);
-        throw error;
-      }
-    } */
-  /* 
-    private async executeAction(
-      action: string,
-      text: string,
-      coordinates?: number[],
-    ) {
-      try {
-        console.log(`Starting action: ${action}`);
-        let c, one;
-        switch (action) {
-          case 'mouse_move':
-            if (!coordinates || coordinates.length < 2)
-              throw new Error('Coordinates required for mouse_move');
-            console.log(`Moving mouse to: ${coordinates[0]}, ${coordinates[1]}`);
-            c = `cliclick m:${coordinates[0]},${coordinates[1]}`
-            console.log(c)
-            execSync(c);
-            break;
-  
-          case 'key':
-            console.log(`Pressing key: ${text}`);
-            const keyMapping = {
-              Return: 'enter',
-              Tab: 'tab',
-              Command: 'cmd',
-              Meta: 'cmd',
-              Shift: 'shift',
-              Control: 'ctrl',
-              Alt: 'alt',
-              Space: 'space',
-            };
-  
-            // Split the input text by "+" to handle combinations
-            const keys = text.split('+').map((key) => keyMapping[key] || key.toLowerCase());
-            const kdAllowed = [
-              "alt",
-              "cmd",
-              "ctrl",
-              "fn",
-              "shift",
-            ]
-            if (keys.length > 1) {
-              // Handle combinations
-              const modifierKeys = keys.filter(k => kdAllowed.includes(k.toLowerCase())).slice(0, -1).map((key) => `kd:${key}`).join(' ');
-              const mainKey = keys[keys.length - 1];
-  
-              c = `cliclick ${modifierKeys} kp:${mainKey} ${keys.reverse().filter(k => kdAllowed.includes(k.toLowerCase())).map((key) => `ku:${key}`).join(' ')}`;
-            } else {
-              // Handle single key
-              const keyToPress = keys[0];
-              c = `cliclick kd:${keyToPress} wu:${keyToPress}`;
-            }
-            // const args = this.generateCliclickArgs([{ action, text }]);
-  
-            // one = text.includes('+') ? "keyCombo" : "keyPress";
-            // this.generateCliclickCommand(one, args)
-            const c1 = `cliclick kd:cmd kp:space ku:cmd`
-            if (text.toLowerCase() == "command+space" || text.toLowerCase() == "super+space")
-              c = c1
-            if (text.toLowerCase() == 'return')
-              c = 'cliclick kp:enter'
-            console.log(c)
-            execSync(c);
-            break;
-  
-  
-          case 'type':
-            console.log(`Typing text: ${text}`);
-            const escapedText = shellEscape([text]);
-            c = `cliclick t:${escapedText}`
-            console.log(c)
-            execSync(c);
-            break;
-  
-          case 'left_click':
-            console.log('Performing left click');
-            c = `cliclick c:.`
-            console.log(c)
-            execSync(c);
-            break;
-  
-          case 'left_click_drag':
-            if (!coordinates || coordinates.length < 2)
-              throw new Error('Coordinates required for left_click_drag');
-            const [endX, endY] = coordinates;
-            console.log(`Dragging to ${endX}, ${endY}`);
-            c = `cliclick dd:. m:${endX},${endY} du:.`
-            console.log(c)
-            execSync(c);
-            break;
-  
-          case 'right_click':
-            console.log('Performing right click');
-            c = `cliclick rc:.`
-            console.log(c)
-            execSync(c);
-            break;
-  
-          case 'middle_click':
-            console.log('Performing middle click');
-            c = `cliclick mc:.`
-            console.log(c)
-            execSync(c);
-            break;
-  
-          case 'double_click':
-            console.log('Performing double click');
-            c = `cliclick dc:.`
-            console.log(c)
-            execSync(c);
-            break;
-  
-          case 'screenshot':
-            console.log('Taking screenshot');
-            const screenshotName = this.generateUniqueFileName(); // Ensure it generates a valid file name
-            try {
-              // Use screencapture command for macOS
-              c = `screencapture -x ${screenshotName}`
-              execSync(c);
-            } catch (e) {
-              console.error('Failed to take screenshot:', e.message);
-              throw e; // Rethrow the error if needed
-            }
-            await sleep(1000); // Wait for 1 second after screenshot
-            return { screenshot_path: screenshotName };
-  
-          case 'cursor_position':
-            const position = execSync(`cliclick p`).toString().trim();
-            const match = position.match(/^x:(\d+)\s+y:(\d+)$/);
-            if (!match) throw new Error('Failed to get cursor position');
-            const [x, y] = [parseInt(match[1], 10), parseInt(match[2], 10)];
-            return { x, y };
-  
-          default:
-            throw new Error(`Unsupported action: ${action}`);
-        }
-        console.log(`Action ${action} completed successfully`);
-        return { success: true };
-      } catch (error) {
-        console.error(`Error executing action ${action}:`, error);
-        throw error;
-      }
-    } */
-
   private async executeActionMac(
     action: string,
     text: string,
@@ -438,7 +286,7 @@ export class ClaudeComputerService {
         case 'screenshot':
           let c;
           console.log('Taking screenshot');
-          const screenshotName = this.generateUniqueFileName(); // Ensure it generates a valid file name
+          const screenshotName = generateUniqueFileName(); // Ensure it generates a valid file name
           try {
             // Use screencapture command for macOS
             c = `screencapture -x ${screenshotName}`
@@ -485,12 +333,14 @@ export class ClaudeComputerService {
 
   async interactWithClaude(userPrompt: string) {
     console.log('Starting interaction with Claude');
+    const isMac = process.env.PLATFORM == 'MAC';
+    console.log({ isMac })
     let messages: MessageParam[] = [
       {
         content: [
           {
             type: 'text',
-            text: SYSTEM_PROMPT,
+            text: isMac ? SYSTEM_PROMPT_MAC : SYSTEM_PROMPT_LINUX,
           },
           {
             type: 'text',
@@ -560,16 +410,31 @@ export class ClaudeComputerService {
           });
 
           // Execute action
-          const result: ActionResult = await this.executeActionMac(
-            // @ts-expect-error
-            tool.input.action,
+          let result: ActionResult
+          if (isMac) {
+            result = await this.executeActionMac(
+              // @ts-expect-error
+              tool.input.action,
 
-            // @ts-expect-error
-            tool.input.text,
+              // @ts-expect-error
+              tool.input.text,
 
-            // @ts-expect-error
-            tool.input.coordinate,
-          );
+              // @ts-expect-error
+              tool.input.coordinate,
+            );
+          } else {
+            result = await this.executeActionLinux(
+              // @ts-expect-error
+              tool.input.action,
+
+              // @ts-expect-error
+              tool.input.text,
+
+              // @ts-expect-error
+              tool.input.coordinate,
+            );
+          }
+
 
           // Add tool result message
           if (result.screenshot_path) {
