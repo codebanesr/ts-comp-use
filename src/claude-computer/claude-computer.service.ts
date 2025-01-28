@@ -60,6 +60,7 @@ const SYSTEM_PROMPT = `<SYSTEM_CAPABILITY>
 * To open Firefox, press Command (⌘) + Space, type "Firefox," and click on firefox to open. Note, Firefox is the installed version on your system.
 * When you return a key press instruction make sure you use the names from this name list ${modifierKeys.join(',')} , ${keys.join(',')} 
 * Using your terminal tool, you can start GUI applications by running the \`open\` command. For example, \`open -a Firefox\`. GUI apps run with this method will appear within your desktop environment, but they may take some time to appear. Take a screenshot to confirm it did.
+* to close a app, you can use cmd+w
 * When using your terminal tool with commands that are expected to output very large quantities of text, redirect into a tmp file and use \`grep -n -B <lines before> -A <lines after> <query> <filename>\` to confirm output.
 * When viewing a page it can be helpful to zoom out so that you can see everything on the page. Either that, or make sure you scroll down to see everything before deciding something isn't available.
 * When using your computer function calls, they take a while to run and send back to you. Where possible/feasible, try to chain multiple of these calls all into one function calls request.
@@ -358,12 +359,9 @@ export class ClaudeComputerService {
 
         case 'key':
           console.log(`Pressing key: ${text}`);
-          if (text == ' ') {
-            text = 'space'
-          }
           // Convert common key names to cliclick format
           const keyMap: { [key: string]: string } = {
-            'return': 'kp:enter',
+            'return': 'kp:enter kp:return',
             'tab': 'kp:tab',
             'space': 'kp:space',
             'left': 'kp:arrow-left',
@@ -377,12 +375,13 @@ export class ClaudeComputerService {
             'end': 'kp:end',
             'page_up': 'kp:page-up',
             'page_down': 'kp:page-down',
-            'cmd+space': "kd:cmd kp:space ku:cmd"
+            'cmd+space': "kd:cmd kp:space ku:cmd",
+            'cmd+w': 'kd:cmd t:w'
           };
 
           // cliclick kd:cmd kp:space ku:cmd
-          if (text in keyMap) {
-            runCliclick(keyMap[text].toLowerCase());
+          if (text.toLowerCase() in keyMap) {
+            runCliclick(keyMap[text.toLowerCase()]);
           } else {
             // For regular characters, use the type command
             runCliclick(`t:${text}`);
@@ -397,7 +396,7 @@ export class ClaudeComputerService {
           //   if (char == ' ') {
           //     runCliclick(`t:num-plus`);
           //   } else {
-              runCliclick(`t:"${text}"`);
+          runCliclick(`t:"${text}"`);
           //   }
 
           //   await sleep(10); // Small delay between characters
