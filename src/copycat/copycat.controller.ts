@@ -11,9 +11,14 @@ export class CopycatController {
     return result;
   }
 
+  // Write a controller called run, this endpoint will take a url and a message, then it will open the browser, call markClickableElements, then
+  // call openai function to ask it what action to be taken next, then use BrowserAutomationService execution method to execute the action
+
   @Post('run')
-  async run(@Body('url') url: string) {
-    const result = await this.copyCatService.run(url);
+  async run(@Body('url') url: string, @Body('message') message: string) {
+    await this.copyCatService.initialize();
+
+    const result = await this.copyCatService.runAutomation(url, message);
     return result;
   }
 }

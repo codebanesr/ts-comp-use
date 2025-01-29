@@ -1,53 +1,71 @@
-// copy-cat.service.ts
 import { Injectable } from '@nestjs/common';
 import { chromium, Browser, Page } from 'playwright';
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  apiKey: process.env['OPENAI_API_KEY'], // This is the default and can be omitted
+});
 
 @Injectable()
 export class CopyCatService {
   private browser: Browser | null = null;
+  private page: Page | null = null;
   private elementMap: { [key: number]: { xpath: string; text: string } } = {};
 
+  isBrowserInitialized(): boolean {
+    return this.browser !== null && this.page !== null;
+  }
+
   async initialize(): Promise<void> {
+    if (this.isBrowserInitialized()) return;
+
     this.browser = await chromium.launch({
       headless: false,
       executablePath:
         '/Users/shanurrahman/Library/Caches/ms-playwright/chromium-1148/chrome-mac/Chromium.app/Contents/MacOS/Chromium',
     });
+
+    this.page = await this.browser.newPage();
   }
 
   async analyzeWebsite(url: string): Promise<string> {
-    if (!this.browser) {
+    if (!this.isBrowserInitialized()) {
       await this.initialize();
     }
 
-    const page = await this.browser.newPage();
+    if (!this.page) {
+      throw new Error('Page is not initialized.');
+    }
+
     try {
-      await this.setupPage(page, url);
-      await this.markClickableElements(page);
-      const screenshotPath = await this.captureScreenshot(page);
-      return screenshotPath;
-    } finally {
-      await page.close();
+      await this.setupPage(url);
+      await this.markClickableElements();
+      return await this.captureScreenshot();
+    } catch (error) {
+      console.error('Error analyzing website:', error);
+      throw error;
     }
   }
 
-  private async setupPage(page: Page, url: string): Promise<void> {
-    await page.setViewportSize({ width: 1920, height: 1080 });
-    await page.goto(url);
-    await page.waitForLoadState('networkidle');
+  private async setupPage(url: string): Promise<void> {
+    if (!this.page) return;
 
-    // Clear existing overlays
-    await page.evaluate(() => {
-      const existingOverlays = document.querySelectorAll(
-        '.highlight-overlay, .number-label',
-      );
-      existingOverlays.forEach((overlay) => overlay.remove());
+    await this.page.setViewportSize({ width: 1920, height: 1080 });
+    await this.page.goto(url);
+    await this.page.waitForLoadState('networkidle');
+
+    await this.page.evaluate(() => {
+      document
+        .querySelectorAll('.highlight-overlay, .number-label')
+        .forEach((overlay) => overlay.remove());
     });
   }
 
-  private async markClickableElements(page: Page) {
+  async markClickableElements() {
+    if (!this.page) return;
+
     this.elementMap = {};
-    const elements = await page.$$(
+    const elements = await this.page.$$(
       'a, button, input, textarea, select, [role=button], [onclick]',
     );
 
@@ -64,8 +82,7 @@ export class CopyCatService {
       if (occupiedPositions.has(positionKey)) continue;
       occupiedPositions.add(positionKey);
 
-      // Get XPath and text content for the element
-      const { xpath, text } = await page.evaluate((el) => {
+      const { xpath, text } = await this.page.evaluate((el) => {
         const getXPath = (element: Element): string => {
           if (!element.parentNode) return '';
           if (element === document.body) return '/html/body';
@@ -77,8 +94,7 @@ export class CopyCatService {
             const sibling = siblings[i];
             if (sibling === element) {
               const path = getXPath(element.parentNode as Element);
-              const tag = element.tagName.toLowerCase();
-              return `${path}/${tag}[${pos + 1}]`;
+              return `${path}/${element.tagName.toLowerCase()}[${pos + 1}]`;
             }
             if (
               sibling.nodeType === 1 &&
@@ -91,7 +107,6 @@ export class CopyCatService {
           return '';
         };
 
-        // Get text content considering different element types
         const getText = (element: Element): string => {
           if (element instanceof HTMLInputElement) {
             return element.value || element.placeholder || element.type;
@@ -104,18 +119,13 @@ export class CopyCatService {
           }
         };
 
-        return {
-          xpath: getXPath(el),
-          text: getText(el),
-        };
+        return { xpath: getXPath(el), text: getText(el) };
       }, element);
 
-      // Store element number, xpath, and text in map
       this.elementMap[i + 1] = { xpath, text };
 
-      await page.evaluate(
+      await this.page.evaluate(
         ({ box, i }) => {
-          // Create box overlay
           const highlight = document.createElement('div');
           highlight.className = 'highlight-overlay';
           highlight.style.position = 'absolute';
@@ -127,7 +137,6 @@ export class CopyCatService {
           highlight.style.zIndex = '99999';
           highlight.style.pointerEvents = 'none';
 
-          // Create number label
           const label = document.createElement('div');
           label.className = 'number-label';
           label.textContent = (i + 1).toString();
@@ -146,16 +155,14 @@ export class CopyCatService {
       );
     }
 
-    // Print the element map
-    console.log('Element Number to XPath and Text mapping:');
-    console.log(JSON.stringify(this.elementMap, null, 2));
-
-    return this.elementMap;
+    console.log('Element Number to XPath and Text mapping:', this.elementMap);
   }
 
-  private async captureScreenshot(page: Page): Promise<string> {
+  async captureScreenshot(): Promise<string> {
+    if (!this.page) throw new Error('Page is not initialized.');
+
     const screenshotPath = 'screenshot.png';
-    await page.screenshot({
+    await this.page.screenshot({
       path: screenshotPath,
       fullPage: false,
       scale: 'css',
@@ -164,9 +171,95 @@ export class CopyCatService {
   }
 
   async cleanup(): Promise<void> {
+    if (this.page) {
+      await this.page.close();
+      this.page = null;
+    }
     if (this.browser) {
       await this.browser.close();
       this.browser = null;
     }
+  }
+
+  async runAutomation(url: string, message: string) {
+    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      {
+        role: 'system',
+        content:
+          'You are a helpful assistant that can analyze a website and return the text and xpath of the clickable elements.',
+      },
+      {
+        role: 'user',
+        content: message,
+      },
+    ];
+
+    do {
+      const result = await client.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: messages,
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'analyze_website',
+              description:
+                'Analyze a website and return the text and xpath of the clickable elements.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  url: {
+                    type: 'string',
+                    description: 'The URL of the website to analyze.',
+                  },
+                },
+                required: ['url'],
+              },
+            },
+          },
+          // function to end the conversation
+          {
+            function: {
+              name: 'finish',
+              description: 'Finish the conversation.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  input: {
+                    type: 'string',
+                    description: 'The input to finish the conversation.',
+                  },
+                },
+                required: ['input'],
+              },
+            },
+            type: 'function',
+          },
+        ],
+      });
+
+      if (result.choices[0].finish_reason === 'tool_calls') {
+        const tools = result.choices[0].message.tool_calls;
+        messages.push({
+          role: 'assistant',
+          tool_calls: tools,
+        });
+
+        for (const tool of tools) {
+          if (tool.function.name === 'analyze_website') {
+            const params = JSON.parse(tool.function.arguments);
+            const result = await this.analyzeWebsite(params.url);
+            messages.push({
+              role: 'tool',
+              tool_call_id: tool.id,
+              content: result,
+            });
+          } else if (tool.function.name === 'finish') {
+            break;
+          }
+        }
+      }
+      message = result.choices[0].message.content;
+    } while (true);
   }
 }
