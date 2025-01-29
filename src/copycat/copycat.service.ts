@@ -5,6 +5,7 @@ import { chromium, Browser, Page } from 'playwright';
 @Injectable()
 export class CopyCatService {
   private browser: Browser | null = null;
+  private elementMap: { [key: number]: { xpath: string; text: string } } = {};
 
   async initialize(): Promise<void> {
     this.browser = await chromium.launch({
@@ -44,7 +45,8 @@ export class CopyCatService {
     });
   }
 
-  private async markClickableElements(page: Page): Promise<void> {
+  private async markClickableElements(page: Page) {
+    this.elementMap = {};
     const elements = await page.$$(
       'a, button, input, textarea, select, [role=button], [onclick]',
     );
@@ -61,6 +63,55 @@ export class CopyCatService {
 
       if (occupiedPositions.has(positionKey)) continue;
       occupiedPositions.add(positionKey);
+
+      // Get XPath and text content for the element
+      const { xpath, text } = await page.evaluate((el) => {
+        const getXPath = (element: Element): string => {
+          if (!element.parentNode) return '';
+          if (element === document.body) return '/html/body';
+
+          let pos = 0;
+          const siblings = element.parentNode.childNodes;
+
+          for (let i = 0; i < siblings.length; i++) {
+            const sibling = siblings[i];
+            if (sibling === element) {
+              const path = getXPath(element.parentNode as Element);
+              const tag = element.tagName.toLowerCase();
+              return `${path}/${tag}[${pos + 1}]`;
+            }
+            if (
+              sibling.nodeType === 1 &&
+              (sibling as Element).tagName.toLowerCase() ===
+                element.tagName.toLowerCase()
+            ) {
+              pos++;
+            }
+          }
+          return '';
+        };
+
+        // Get text content considering different element types
+        const getText = (element: Element): string => {
+          if (element instanceof HTMLInputElement) {
+            return element.value || element.placeholder || element.type;
+          } else if (element instanceof HTMLTextAreaElement) {
+            return element.value || element.placeholder;
+          } else if (element instanceof HTMLSelectElement) {
+            return element.options[element.selectedIndex]?.text || '';
+          } else {
+            return element.textContent?.trim() || '';
+          }
+        };
+
+        return {
+          xpath: getXPath(el),
+          text: getText(el),
+        };
+      }, element);
+
+      // Store element number, xpath, and text in map
+      this.elementMap[i + 1] = { xpath, text };
 
       await page.evaluate(
         ({ box, i }) => {
@@ -95,14 +146,18 @@ export class CopyCatService {
       );
     }
 
-    await page.waitForTimeout(10000);
+    // Print the element map
+    console.log('Element Number to XPath and Text mapping:');
+    console.log(JSON.stringify(this.elementMap, null, 2));
+
+    return this.elementMap;
   }
 
   private async captureScreenshot(page: Page): Promise<string> {
     const screenshotPath = 'screenshot.png';
     await page.screenshot({
       path: screenshotPath,
-      fullPage: true,
+      fullPage: false,
       scale: 'css',
     });
     return screenshotPath;
