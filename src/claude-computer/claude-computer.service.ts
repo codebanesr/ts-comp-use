@@ -9,12 +9,34 @@ import { execSync } from 'child_process';
 import Anthropic from '@anthropic-ai/sdk';
 import { MessageParam } from '@anthropic-ai/sdk/resources';
 import { sleep } from '@anthropic-ai/sdk/core';
+import { keys, modifierKeys } from './mac-utils';
+import { join } from 'path';
+
+// Define return type interfaces
+interface SuccessResult {
+  success: boolean;
+  screenshot_path?: string;
+}
+
+interface ScreenshotResult {
+  screenshot_path?: string;
+}
+
+interface CursorPositionResult {
+  x: number;
+  y: number;
+  screenshot_path?: string;
+}
+
+// Union type for all possible return types
+type ActionResult = SuccessResult | ScreenshotResult | CursorPositionResult;
+
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const SYSTEM_PROMPT = `<SYSTEM_CAPABILITY>
+const SYSTEM_PROMPT_LINUX = `<SYSTEM_CAPABILITY>
 * You are utilising an Ubuntu virtual machine using {platform.machine()} architecture with internet access.
 * You can feel free to install Ubuntu applications with your bash tool. Use curl instead of wget.
 * To open firefox, please just click on the firefox icon.  Note, firefox-esr is what is installed on your system.
@@ -29,6 +51,32 @@ const SYSTEM_PROMPT = `<SYSTEM_CAPABILITY>
 * When using Firefox, if a startup wizard appears, IGNORE IT.  Do not even click "skip this step".  Instead, click on the address bar where it says "Search or enter address", and enter the appropriate search term or URL there.
 * If the item you are looking at is a pdf, if after taking a single screenshot of the pdf it seems that you want to read the entire document instead of trying to continue to read the pdf from your screenshots + navigation, determine the URL, use curl to download the pdf, install and use pdftotext to convert it to a text file, and then read that text file directly with your StrReplaceEditTool.
 </IMPORTANT>`;
+
+
+
+const SYSTEM_PROMPT_MAC = `<SYSTEM_CAPABILITY>
+* You are utilizing a macOS virtual machine using {platform.machine()} architecture with internet access.
+* You can feel free to install macOS applications with your terminal tool using Homebrew. Use curl instead of wget where applicable.
+* To open Firefox, press Command (⌘) + Space, type "Firefox," and click on firefox to open. Note, Firefox is the installed version on your system.
+* When you return a key press instruction make sure you use the names from this name list ${modifierKeys.join(',')} , ${keys.join(',')} 
+* Using your terminal tool, you can start GUI applications by running the \`open\` command. For example, \`open -a Firefox\`. GUI apps run with this method will appear within your desktop environment, but they may take some time to appear. Take a screenshot to confirm it did.
+* to close a app, you can use cmd+w
+* When using your terminal tool with commands that are expected to output very large quantities of text, redirect into a tmp file and use \`grep -n -B <lines before> -A <lines after> <query> <filename>\` to confirm output.
+* When viewing a page it can be helpful to zoom out so that you can see everything on the page. Either that, or make sure you scroll down to see everything before deciding something isn't available.
+* When using your computer function calls, they take a while to run and send back to you. Where possible/feasible, try to chain multiple of these calls all into one function calls request.
+* The current date is {datetime.today().strftime('%A, %B %-d, %Y')}.
+</SYSTEM_CAPABILITY>
+
+<IMPORTANT>
+* When using Firefox, if a startup wizard appears, IGNORE IT. Do not even click "skip this step." Instead, click on the address bar where it says "Search or enter address," and enter the appropriate search term or URL there.
+* If the item you are looking at is a PDF, and after taking a single screenshot of the PDF it seems that you want to read the entire document, instead of trying to continue to read the PDF from your screenshots + navigation, determine the URL, use curl to download the PDF, install and use \`pdftotext\` to convert it to a text file, and then read that text file directly with your preferred text processing tools.
+</IMPORTANT>`;
+
+function generateUniqueFileName(prefix = 'screenshot', extension = 'png') {
+  const timestamp = new Date().toISOString().replace(/[-:.]/g, '');
+  const randomString = Math.random().toString(36).substring(2, 8);
+  return `${prefix}_${timestamp}_${randomString}.${extension}`;
+}
 
 @Injectable()
 export class ClaudeComputerService {
@@ -45,7 +93,7 @@ export class ClaudeComputerService {
     return `${prefix}_${timestamp}_${randomString}.${extension}`;
   }
 
-  private async executeAction(
+  private async executeActionLinux(
     action: string,
     text: string,
     coordinates?: number[],
@@ -139,15 +187,164 @@ export class ClaudeComputerService {
       throw error;
     }
   }
+  private async executeActionMac(
+    action: string,
+    text: string,
+    coordinates?: number[],
+  ): Promise<ActionResult> {
+    try {
+      console.log(`Starting action: ${action}`);
+
+      // Helper function to execute cliclick commands
+      const runCliclick = (cmd: string) => {
+        console.log(`Running command: ${cmd}`);
+        execSync(`cliclick ${cmd}`)
+      };
+
+      switch (action) {
+        case 'mouse_move':
+          if (!coordinates || coordinates.length < 2)
+            throw new Error('Coordinates required for mouse_move');
+          console.log(`Moving mouse to: ${coordinates[0]}, ${coordinates[1]}`);
+          runCliclick(`m:${coordinates[0]},${coordinates[1]}`);
+          break;
+
+        case 'key':
+          console.log(`Pressing key: ${text}`);
+          // Convert common key names to cliclick format
+          const keyMap: { [key: string]: string } = {
+            'return': 'kp:enter kp:return',
+            'tab': 'kp:tab',
+            'space': 'kp:space',
+            'left': 'kp:arrow-left',
+            'right': 'kp:arrow-right',
+            'up': 'kp:arrow-up',
+            'down': 'kp:arrow-down',
+            'escape': 'kp:esc',
+            'delete': 'kp:delete',
+            'backspace': 'kp:backspace',
+            'home': 'kp:home',
+            'end': 'kp:end',
+            'page_up': 'kp:page-up',
+            'page_down': 'kp:page-down',
+            'cmd+space': "kd:cmd kp:space ku:cmd",
+            'cmd+w': 'kd:cmd t:w'
+          };
+
+          // cliclick kd:cmd kp:space ku:cmd
+          if (text.toLowerCase() in keyMap) {
+            runCliclick(keyMap[text.toLowerCase()]);
+          } else {
+            // For regular characters, use the type command
+            runCliclick(`t:${text}`);
+          }
+          break;
+
+        case 'type':
+          console.log(`Typing text: ${text}`);
+          // Split into characters and type them individually to ensure reliability
+          // const chars = text.split('');
+          // for (const char of chars) {
+          //   if (char == ' ') {
+          //     runCliclick(`t:num-plus`);
+          //   } else {
+          runCliclick(`t:"${text}"`);
+          //   }
+
+          //   await sleep(10); // Small delay between characters
+          // }
+          break;
+
+        case 'left_click':
+          console.log('Performing left click');
+          runCliclick('c:.');
+          break;
+
+        case 'left_click_drag':
+          if (!coordinates || coordinates.length < 2)
+            throw new Error('Coordinates required for left_click_drag');
+          const [endX, endY] = coordinates;
+          console.log(`Dragging to ${endX}, ${endY}`);
+          // Get current position first
+          const currentPos = await this.getCurrentPosition();
+          runCliclick(`dd:${currentPos.x},${currentPos.y},${endX},${endY}`);
+          break;
+
+        case 'right_click':
+          console.log('Performing right click');
+          runCliclick('rc:.');
+          break;
+
+        case 'middle_click':
+          console.log('Performing middle click');
+          // Note: cliclick doesn't directly support middle click
+          // You might need to use alternative methods or third-party tools
+          console.warn('Middle click not directly supported in cliclick');
+          break;
+
+        case 'double_click':
+          console.log('Performing double click');
+          runCliclick('dc:.');
+          break;
+
+        case 'screenshot':
+          let c;
+          console.log('Taking screenshot');
+          const screenshotName = generateUniqueFileName(); // Ensure it generates a valid file name
+          try {
+            // Use screencapture command for macOS
+            c = `screencapture -x ${screenshotName}`
+            execSync(c);
+          } catch (e) {
+            console.error('Failed to take screenshot:', e.message);
+            throw e; // Rethrow the error if needed
+          }
+          await sleep(1000); // Wait for 1 second after screenshot
+          return { screenshot_path: screenshotName };
+
+        case 'cursor_position':
+          return this.getCurrentPosition();
+
+        default:
+          throw new Error(`Unsupported action: ${action}`);
+      }
+
+      console.log(`Action ${action} completed successfully`);
+      return { success: true };
+    } catch (error) {
+      console.error(`Error executing action ${action}:`, error);
+      throw error;
+    }
+  }
+
+  // Helper method to get current cursor position
+  private async getCurrentPosition(): Promise<{ x: number, y: number }> {
+    try {
+      const output = execSync('cliclick p').toString();
+      const match = output.match(/(\d+),(\d+)/);
+      if (!match) throw new Error('Failed to get cursor position');
+      return {
+        x: parseInt(match[1], 10),
+        y: parseInt(match[2], 10)
+      };
+    } catch (error) {
+      console.error('Error getting cursor position:', error);
+      throw error;
+    }
+  }
+
+
 
   async interactWithClaude(userPrompt: string) {
     console.log('Starting interaction with Claude');
+    const isMac = process.env.PLATFORM == 'MAC';
+    console.log({ isMac })
     let messages: MessageParam[] = [
       {
         content: [
           {
             type: 'text',
-            text: SYSTEM_PROMPT,
+            text: isMac ? SYSTEM_PROMPT_MAC : SYSTEM_PROMPT_LINUX,
           },
           {
             type: 'text',
@@ -217,16 +414,31 @@ export class ClaudeComputerService {
           });
 
           // Execute action
-          const result = await this.executeAction(
-            // @ts-expect-error
-            tool.input.action,
+          let result: ActionResult
+          if (isMac) {
+            result = await this.executeActionMac(
+              // @ts-expect-error
+              tool.input.action,
 
-            // @ts-expect-error
-            tool.input.text,
+              // @ts-expect-error
+              tool.input.text,
 
-            // @ts-expect-error
-            tool.input.coordinate,
-          );
+              // @ts-expect-error
+              tool.input.coordinate,
+            );
+          } else {
+            result = await this.executeActionLinux(
+              // @ts-expect-error
+              tool.input.action,
+
+              // @ts-expect-error
+              tool.input.text,
+
+              // @ts-expect-error
+              tool.input.coordinate,
+            );
+          }
+
 
           // Add tool result message
           if (result.screenshot_path) {
