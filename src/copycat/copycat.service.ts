@@ -1,16 +1,28 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { chromium, Browser, Page } from 'playwright';
 import OpenAI from 'openai';
+import * as path from 'path';
+import * as fs from 'fs';
+import {
+  AutomationAction,
+  BrowserAutomationService,
+} from './browser-automation.service';
 
 const client = new OpenAI({
-  apiKey: process.env['OPENAI_API_KEY'], // This is the default and can be omitted
+  apiKey: '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', // This is the default and can be omitted,
+  baseURL: 'https://api.groq.com/openai/v1',
 });
 
 @Injectable()
-export class CopyCatService {
+export class CopyCatService implements OnModuleDestroy {
   private browser: Browser | null = null;
   private page: Page | null = null;
   private elementMap: { [key: number]: { xpath: string; text: string } } = {};
+
+  private readonly logger = new Logger(CopyCatService.name);
+  constructor(
+    private readonly browserAutomationService: BrowserAutomationService,
+  ) {}
 
   isBrowserInitialized(): boolean {
     return this.browser !== null && this.page !== null;
@@ -28,7 +40,7 @@ export class CopyCatService {
     this.page = await this.browser.newPage();
   }
 
-  async analyzeWebsite(url: string): Promise<string> {
+  async initWebsiteStart(url: string): Promise<string> {
     if (!this.isBrowserInitialized()) {
       await this.initialize();
     }
@@ -40,7 +52,7 @@ export class CopyCatService {
     try {
       await this.setupPage(url);
       await this.markClickableElements();
-      return await this.captureScreenshot();
+      return this.captureScreenshot();
     } catch (error) {
       console.error('Error analyzing website:', error);
       throw error;
@@ -161,16 +173,30 @@ export class CopyCatService {
   async captureScreenshot(): Promise<string> {
     if (!this.page) throw new Error('Page is not initialized.');
 
-    const screenshotPath = 'screenshot.png';
+    // Define the folder where screenshots will be saved
+    const screenshotFolder = 'screenshots';
+
+    // Create the folder if it doesn't exist
+    if (!fs.existsSync(screenshotFolder)) {
+      fs.mkdirSync(screenshotFolder);
+    }
+
+    // Generate a unique filename using a timestamp
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const screenshotName = `screenshot-${timestamp}.png`;
+    const screenshotPath = path.join(screenshotFolder, screenshotName);
+
+    // Capture the screenshot and save it to the specified path
     await this.page.screenshot({
       path: screenshotPath,
       fullPage: false,
       scale: 'css',
     });
+
     return screenshotPath;
   }
 
-  async cleanup(): Promise<void> {
+  async onModuleDestroy(): Promise<void> {
     if (this.page) {
       await this.page.close();
       this.page = null;
@@ -181,12 +207,12 @@ export class CopyCatService {
     }
   }
 
-  async runAutomation(url: string, message: string) {
+  async runAutomation(message: string) {
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
       {
         role: 'system',
-        content:
-          'You are a helpful assistant that can analyze a website and return the text and xpath of the clickable elements.',
+        content: `You are a helpful assistant that can run browser automation actions on a website. The way you do it is by taking a screenshot of the page and then predicting next actions
+          To make your job easier the screenshots will have all the elements labelled with a number. so your job is to give me back that number along with the actions as defined in the schema.`,
       },
       {
         role: 'user',
@@ -196,44 +222,80 @@ export class CopyCatService {
 
     do {
       const result = await client.chat.completions.create({
-        model: 'gpt-3.5-turbo',
+        function_call: 'auto',
+        model: 'llama-3.3-70b-versatile',
         messages: messages,
         tools: [
           {
             type: 'function',
             function: {
-              name: 'analyze_website',
+              name: 'capture_screenshot',
               description:
-                'Analyze a website and return the text and xpath of the clickable elements.',
+                'Use this to take screenshot of the current page. Then you can decide what action to take next',
+              parameters: {},
+            },
+          },
+          {
+            type: 'function',
+            function: {
+              name: 'propose_actions',
+              description:
+                'Propose a list of automation actions to execute (click, type, select, etc). Returns an array of actions with element indices, action types, values, and execution reasons.',
               parameters: {
                 type: 'object',
                 properties: {
-                  url: {
-                    type: 'string',
-                    description: 'The URL of the website to analyze.',
+                  actions: {
+                    type: 'array',
+                    description: 'Array of automation actions to execute',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        index: {
+                          type: 'number',
+                          description:
+                            'Index of the element in the screenshot to interact with',
+                        },
+                        action: {
+                          type: 'string',
+                          enum: ['click', 'type', 'select', 'hover', 'wait'],
+                          description: 'Type of action to perform',
+                        },
+                        value: {
+                          type: 'string',
+                          description:
+                            'Optional value for actions like typing or selecting',
+                        },
+                        reason: {
+                          type: 'string',
+                          description:
+                            'Explanation why this action should be executed',
+                        },
+                        next_action: {
+                          type: 'string',
+                          description:
+                            'Optional description of subsequent action',
+                        },
+                      },
+                      required: ['index', 'action', 'reason'],
+                    },
                   },
                 },
-                required: ['url'],
+                required: ['actions'],
               },
             },
           },
-          // function to end the conversation
           {
+            type: 'function',
             function: {
               name: 'finish',
-              description: 'Finish the conversation.',
+              description:
+                'Use this tool to end the conversation once the user request has been met.',
               parameters: {
                 type: 'object',
-                properties: {
-                  input: {
-                    type: 'string',
-                    description: 'The input to finish the conversation.',
-                  },
-                },
-                required: ['input'],
+                properties: {},
+                required: [],
               },
             },
-            type: 'function',
           },
         ],
       });
@@ -246,13 +308,26 @@ export class CopyCatService {
         });
 
         for (const tool of tools) {
-          if (tool.function.name === 'analyze_website') {
-            const params = JSON.parse(tool.function.arguments);
-            const result = await this.analyzeWebsite(params.url);
+          if (tool.function.name === 'capture_screenshot') {
+            // update the dictionary and send it to execute actions
+            await this.markClickableElements();
+            const result = await this.captureScreenshot();
             messages.push({
               role: 'tool',
               tool_call_id: tool.id,
               content: result,
+            });
+          } else if (tool.function.name === 'propose_actions') {
+            const actions = JSON.parse(
+              tool.function.arguments,
+            ) as AutomationAction[];
+
+            const result = await this.executeActions(actions);
+
+            messages.push({
+              role: 'tool',
+              tool_call_id: tool.id,
+              content: 'Ran all tools successfully',
             });
           } else if (tool.function.name === 'finish') {
             break;
@@ -261,5 +336,23 @@ export class CopyCatService {
       }
       message = result.choices[0].message.content;
     } while (true);
+  }
+
+  async executeActions(actions: AutomationAction[]): Promise<void> {
+    for (const action of actions) {
+      try {
+        await this.browserAutomationService.executeAction(
+          this.page,
+          action,
+          this.elementMap,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to execute action ${action.action} on element ${action.index}`,
+          error,
+        );
+        throw error;
+      }
+    }
   }
 }

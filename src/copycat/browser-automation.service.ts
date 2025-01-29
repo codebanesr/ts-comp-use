@@ -3,7 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Page } from 'playwright';
 
 // Types for our automation
-interface AutomationAction {
+export interface AutomationAction {
   index: number;
   action: 'click' | 'type' | 'select' | 'hover' | 'wait';
   value?: string;
@@ -17,25 +17,7 @@ export class BrowserAutomationService {
 
   constructor() {}
 
-  async executeActions(
-    page: Page,
-    actions: AutomationAction[],
-    elementMap: { [key: number]: { xpath: string; text: string } },
-  ): Promise<void> {
-    for (const action of actions) {
-      try {
-        await this.executeAction(page, action, elementMap);
-      } catch (error) {
-        this.logger.error(
-          `Failed to execute action ${action.action} on element ${action.index}`,
-          error,
-        );
-        throw error;
-      }
-    }
-  }
-
-  private async executeAction(
+  async executeAction(
     page: Page,
     action: AutomationAction,
     elementMap: { [key: number]: { xpath: string; text: string } },

@@ -7,7 +7,7 @@ export class CopycatController {
 
   @Post('analyze')
   async copyCat(@Body('url') url: string) {
-    const result = await this.copyCatService.analyzeWebsite(url);
+    const result = await this.copyCatService.initWebsiteStart(url);
     return result;
   }
 
@@ -16,9 +16,9 @@ export class CopycatController {
 
   @Post('run')
   async run(@Body('url') url: string, @Body('message') message: string) {
-    await this.copyCatService.initialize();
+    await this.copyCatService.initWebsiteStart(url);
 
-    const result = await this.copyCatService.runAutomation(url, message);
+    const result = await this.copyCatService.runAutomation(message);
     return result;
   }
 }
