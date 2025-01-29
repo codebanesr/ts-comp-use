@@ -26,6 +26,7 @@
     "@nestjs/platform-express": "^10.0.0",
     "@nut-tree-fork/nut-js": "^4.2.4",
     "dotenv": "^16.4.7",
+    "openai": "^4.80.1",
     "playwright": "^1.50.0",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",
