@@ -8,14 +8,11 @@ import {
   BrowserAutomationService,
 } from './browser-automation.service';
 import { sleep } from '@anthropic-ai/sdk/core';
-import {
-  ChatCompletionSystemMessageParam,
-  ChatCompletionUserMessageParam,
-} from 'openai/resources';
+import { ChatCompletionUserMessageParam } from 'openai/resources';
 
 const client = new OpenAI({
-  apiKey: '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', // This is the default and can be omitted,
-  baseURL: 'https://api.groq.com/openai/v1',
+  apiKey: '9047ff792d95f758d6f21cc2440e37272951b5e4b86541f0f5083fe9c7cd84a4', // This is the default and can be omitted,
+  baseURL: 'https://api.together.xyz/v1',
 });
 
 @Injectable()
@@ -212,46 +209,73 @@ export class CopyCatService implements OnModuleDestroy {
     }
   }
 
+  private createSystemMessageContent(
+    conversationSummary: string,
+    screenshotUrl: string,
+    originalPrompt: string,
+  ): ChatCompletionUserMessageParam['content'] {
+    return [
+      {
+        type: 'text',
+        text: `You are a browser automation assistant. Follow these rules:
+  1. Analyze the current screenshot with numbered elements
+  2. Respond with JSON containing:
+     - "actions": Array of actions (see allowed actions below)
+     - "summary": Brief step summary (1-2 sentences)
+     - "status": "continue" or "finish"
+
+  Allowed actions:
+  - click: Standard left click
+  - double_click: Double left click
+  - right_click: Right click context menu
+  - type: Input text (requires 'value')
+  - select: Choose dropdown option (requires 'value')
+  - hover: Mouse hover over element
+  - wait: Pause execution (value in seconds)
+  - navigate: Load URL (value as full URL)
+  - scroll: Scroll page (value as 'up', 'down', or pixels)
+  - press_key: Keyboard key (value like 'Enter' or 'Tab')
+  - drag: Drag and drop (value as target index)
+
+  index = Numbered box in screenshot encircling elements
+  Conversation history: ${conversationSummary}
+
+  Example response:
+  {
+    "actions": [
+      { "index": 1, "action": "click", "reason": "Open menu" },
+      { "index": 5, "action": "type", "value": "Paris", "reason": "Set destination" }
+    ],
+    "summary": "Opened travel menu and entered destination",
+    "status": "continue"
+  }\n\n${originalPrompt}`,
+      },
+      {
+        type: 'image_url',
+        image_url: { url: screenshotUrl },
+      },
+    ];
+  }
+
   async runAutomation(message: string) {
     let conversationSummary = 'Conversation History:\n';
     await this.markClickableElements();
     let currentScreenshot = await this.captureScreenshot();
 
-    const systemMessage: ChatCompletionUserMessageParam = {
-      role: 'user',
-      content: [
-        {
-          type: 'text',
-          text: `You are a browser automation assistant. Follow these rules:
-  1. Analyze the current screenshot with numbered elements
-  2. Respond with JSON containing:
-     - "actions": Array of { index: number, action: string, value?: string, reason: string }
-     - "summary": Brief summary of this step (1-2 sentences)
-     - "status": "continue" or "finish"
-  3. Consider this conversation history: ${conversationSummary}
-  4. Never refer to previous screenshots - only use the current one
-
-  Example response:
-  {
-    "actions": [{ "index": 1, "action": "click", "reason": "Open login" }],
-    "summary": "Clicked login button to access form",
-    "status": "continue"
-  }\n\n${message}`,
-        },
-        {
-          type: 'image_url',
-          image_url: { url: currentScreenshot },
-        },
-      ],
-    };
-
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      systemMessage,
+      {
+        role: 'user',
+        content: this.createSystemMessageContent(
+          conversationSummary,
+          currentScreenshot,
+          message,
+        ),
+      },
     ];
 
     while (true) {
       const result = await client.chat.completions.create({
-        model: 'gpt-4-vision-preview',
+        model: 'Qwen/Qwen2-VL-72B-Instruct',
         messages: messages,
       });
 
@@ -259,11 +283,12 @@ export class CopyCatService implements OnModuleDestroy {
 
       try {
         const response = JSON.parse(assistantResponse);
+        console.log(JSON.stringify(response, null, 2));
+
         const actions: AutomationAction[] = response.actions || [];
         const status = response.status || 'continue';
         const stepSummary = response.summary || 'No summary provided';
 
-        // Update conversation history
         conversationSummary += `- ${stepSummary}\n`;
 
         if (status === 'finish') {
@@ -274,40 +299,18 @@ export class CopyCatService implements OnModuleDestroy {
         if (actions.length > 0) {
           await this.executeActions(actions);
 
-          // Update screenshot after actions
           await this.markClickableElements();
           currentScreenshot = await this.captureScreenshot();
 
-          // Reset messages with updated summary and new screenshot
-          messages.length = 0; // Clear previous messages
+          // Update messages with fresh context
+          messages.length = 0;
           messages.push({
             role: 'user',
-            content: [
-              {
-                type: 'text',
-                // Use a template string with explicit placeholder
-                text: `You are a browser automation assistant. Follow these rules:
-          1. Analyze the current screenshot with numbered elements
-          2. Respond with JSON containing:
-             - "actions": Array of { index: number, action: string, value?: string, reason: string }
-             - "summary": Brief summary of this step (1-2 sentences)
-             - "status": "continue" or "finish"
-          3. Consider this conversation history:
-          ${conversationSummary}
-          4. Never refer to previous screenshots - only use the current one
-
-          Example response:
-          {
-            "actions": [{ "index": 1, "action": "click", "reason": "Open login" }],
-            "summary": "Clicked login button to access form",
-            "status": "continue"
-          }\n\n${message}`,
-              },
-              {
-                type: 'image_url',
-                image_url: { url: currentScreenshot },
-              },
-            ],
+            content: this.createSystemMessageContent(
+              conversationSummary,
+              currentScreenshot,
+              message,
+            ),
           });
         } else {
           messages.push({
@@ -317,12 +320,14 @@ export class CopyCatService implements OnModuleDestroy {
           });
         }
       } catch (error) {
-        console.error('JSON parse error:', error);
-        messages.push({
-          role: 'user',
-          content:
-            'Invalid response format. Please use the specified JSON format.',
-        });
+        messages.push(
+          { role: 'assistant', content: assistantResponse },
+          {
+            role: 'user',
+            content:
+              'Invalid response format. Please use the specified JSON format.',
+          },
+        );
       }
 
       await sleep(1000);

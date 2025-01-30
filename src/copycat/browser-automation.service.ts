@@ -2,10 +2,20 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Page } from 'playwright';
 
-// Types for our automation
 export interface AutomationAction {
   index: number;
-  action: 'click' | 'type' | 'select' | 'hover' | 'wait';
+  action:
+    | 'click'
+    | 'double_click'
+    | 'right_click'
+    | 'type'
+    | 'select'
+    | 'hover'
+    | 'wait'
+    | 'navigate'
+    | 'scroll'
+    | 'press_key'
+    | 'drag';
   value?: string;
   reason: string;
   next_action?: string;
@@ -15,56 +25,82 @@ export interface AutomationAction {
 export class BrowserAutomationService {
   private readonly logger = new Logger(BrowserAutomationService.name);
 
-  constructor() {}
-
   async executeAction(
     page: Page,
     action: AutomationAction,
     elementMap: { [key: number]: { xpath: string; text: string } },
   ): Promise<void> {
-    const elementXPath = elementMap[action.index]?.xpath;
-    if (!elementXPath) {
-      throw new Error(`No element found for index ${action.index}`);
+    let elementXPath: string | null = null;
+
+    // Handle element-based actions
+    if (!['navigate', 'wait', 'scroll'].includes(action.action)) {
+      elementXPath = elementMap[action.index]?.xpath;
+      if (!elementXPath) {
+        throw new Error(`No element found for index ${action.index}`);
+      }
     }
 
     this.logger.log(
-      `Executing ${action.action} on element ${action.index} (${elementXPath}) - Reason: ${action.reason}`,
+      `Executing ${action.action}${elementXPath ? ` on element ${action.index} (${elementXPath})` : ''} - Reason: ${action.reason}`,
     );
 
     switch (action.action) {
       case 'click':
-        await this.handleClick(page, elementXPath);
+        await this.handleClick(page, elementXPath!);
+        break;
+      case 'double_click':
+        await this.handleDoubleClick(page, elementXPath!);
+        break;
+      case 'right_click':
+        await this.handleRightClick(page, elementXPath!);
         break;
       case 'type':
-        await this.handleType(page, elementXPath, action.value);
+        await this.handleType(page, elementXPath!, action.value);
         break;
       case 'select':
-        await this.handleSelect(page, elementXPath, action.value);
+        await this.handleSelect(page, elementXPath!, action.value);
         break;
       case 'hover':
-        await this.handleHover(page, elementXPath);
+        await this.handleHover(page, elementXPath!);
         break;
       case 'wait':
-        await this.handleWait(page);
+        await this.handleWait(action.value);
+        break;
+      case 'navigate':
+        await this.handleNavigate(page, action.value);
+        break;
+      case 'scroll':
+        await this.handleScroll(page, action.value);
+        break;
+      case 'press_key':
+        await this.handlePressKey(page, elementXPath!, action.value);
+        break;
+      case 'drag':
+        await this.handleDrag(page, elementXPath!, action.value, elementMap);
         break;
       default:
         throw new Error(`Unsupported action: ${action.action}`);
     }
 
-    // Wait for any network requests to complete
     await page.waitForLoadState('networkidle');
   }
 
   private async handleClick(page: Page, xpath: string): Promise<void> {
-    await page.locator(`xpath=${xpath}`).waitFor({ state: 'visible' });
-    const element = await page.$(`xpath=${xpath}`);
-    if (!element) {
-      throw new Error(`Element not found: ${xpath}`);
-    }
-
-    // Scroll element into view before clicking
+    const element = await this.getVisibleElement(page, xpath);
     await element.scrollIntoViewIfNeeded();
     await element.click();
+  }
+
+  private async handleDoubleClick(page: Page, xpath: string): Promise<void> {
+    const element = await this.getVisibleElement(page, xpath);
+    await element.scrollIntoViewIfNeeded();
+    await element.dblclick();
+  }
+
+  private async handleRightClick(page: Page, xpath: string): Promise<void> {
+    const element = await this.getVisibleElement(page, xpath);
+    await element.scrollIntoViewIfNeeded();
+    await element.click({ button: 'right' });
   }
 
   private async handleType(
@@ -72,20 +108,11 @@ export class BrowserAutomationService {
     xpath: string,
     value?: string,
   ): Promise<void> {
-    if (!value) {
-      throw new Error('Value is required for type action');
-    }
-
-    await page.locator(`xpath=${xpath}`).waitFor({ state: 'visible' });
-    const element = await page.$(`xpath=${xpath}`);
-    if (!element) {
-      throw new Error(`Element not found: ${xpath}`);
-    }
-
-    // Clear existing value first
-    await element.click({ clickCount: 3 }); // Triple click to select all text
+    if (!value) throw new Error('Value required for type action');
+    const element = await this.getVisibleElement(page, xpath);
+    await element.click({ clickCount: 3 });
     await element.press('Backspace');
-    await element.type(value, { delay: 100 }); // Add slight delay between keystrokes
+    await element.type(value, { delay: 100 });
   }
 
   private async handleSelect(
@@ -93,33 +120,68 @@ export class BrowserAutomationService {
     xpath: string,
     value?: string,
   ): Promise<void> {
-    if (!value) {
-      throw new Error('Value is required for select action');
-    }
-
-    await page.locator(`xpath=${xpath}`).waitFor({ state: 'visible' });
-    const element = await page.$(`xpath=${xpath}`);
-    if (!element) {
-      throw new Error(`Element not found: ${xpath}`);
-    }
-
+    if (!value) throw new Error('Value required for select action');
+    const element = await this.getVisibleElement(page, xpath);
     await element.selectOption({ label: value });
   }
 
   private async handleHover(page: Page, xpath: string): Promise<void> {
-    await page.locator(`xpath=${xpath}`).waitFor({ state: 'visible' });
-    const element = await page.$(`xpath=${xpath}`);
-    if (!element) {
-      throw new Error(`Element not found: ${xpath}`);
-    }
-
+    const element = await this.getVisibleElement(page, xpath);
     await element.hover();
   }
 
-  private async handleWait(page: Page): Promise<void> {
-    // Wait for network requests to complete and a brief pause
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(1000);
+  private async handleWait(waitTime?: string): Promise<void> {
+    const duration = parseInt(waitTime || '1', 10) * 1000;
+    await new Promise((resolve) => setTimeout(resolve, duration));
+  }
+
+  private async handleNavigate(page: Page, url?: string): Promise<void> {
+    if (!url) throw new Error('URL required for navigate action');
+    await page.goto(url);
+  }
+
+  private async handleScroll(page: Page, value?: string): Promise<void> {
+    const scrollValue = value || '0';
+    let scrollAmount = 0;
+
+    if (scrollValue === 'up') scrollAmount = -500;
+    else if (scrollValue === 'down') scrollAmount = 500;
+    else scrollAmount = parseInt(scrollValue, 10);
+
+    await page.mouse.wheel(0, scrollAmount);
+  }
+
+  private async handlePressKey(
+    page: Page,
+    xpath: string,
+    value?: string,
+  ): Promise<void> {
+    if (!value) throw new Error('Key value required for press_key action');
+    const element = await this.getVisibleElement(page, xpath);
+    await element.press(value);
+  }
+
+  private async handleDrag(
+    page: Page,
+    sourceXpath: string,
+    targetIndex: string,
+    elementMap: { [key: number]: { xpath: string; text: string } },
+  ): Promise<void> {
+    const targetXpath = elementMap[parseInt(targetIndex, 10)]?.xpath;
+    if (!targetXpath) throw new Error(`Invalid target index: ${targetIndex}`);
+
+    const source = await this.getVisibleElement(page, sourceXpath);
+    const target = await this.getVisibleElement(page, targetXpath);
+
+    await source.dragTo(target);
+  }
+
+  private async getVisibleElement(page: Page, xpath: string) {
+    const locator = page.locator(`xpath=${xpath}`);
+    await locator.waitFor({ state: 'visible' });
+    const element = await locator.elementHandle();
+    if (!element) throw new Error(`Element not found: ${xpath}`);
+    return element;
   }
 
   async verifyActionResult(
@@ -127,32 +189,25 @@ export class BrowserAutomationService {
     action: AutomationAction,
   ): Promise<boolean> {
     try {
-      // Wait for any animations to complete
       await page.waitForTimeout(500);
 
-      // Basic verification based on action type
       switch (action.action) {
-        case 'click':
-          // Could verify if a new element appeared or if URL changed
-          await page.waitForLoadState('networkidle');
+        case 'navigate':
+          return page.url().includes(action.value || '');
+
+        case 'scroll':
+          // Could verify scroll position if needed
           return true;
 
-        case 'type':
-          // Could verify if the value was actually set
-          return true;
-
-        case 'select':
-          // Could verify if the selection was made
+        case 'drag':
+          // Verify using application-specific logic
           return true;
 
         default:
           return true;
       }
     } catch (error) {
-      this.logger.error(
-        `Failed to verify action ${action.action} result`,
-        error,
-      );
+      this.logger.error(`Verification failed for ${action.action}`, error);
       return false;
     }
   }
