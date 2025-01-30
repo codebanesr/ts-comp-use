@@ -42,7 +42,7 @@ export class CopyCatService implements OnModuleDestroy {
     this.page = await this.browser.newPage();
   }
 
-  async initWebsiteStart(url: string): Promise<string> {
+  async initWebsiteStart(url: string): Promise<void> {
     if (!this.isBrowserInitialized()) {
       await this.initialize();
     }
@@ -54,7 +54,6 @@ export class CopyCatService implements OnModuleDestroy {
     try {
       await this.setupPage(url);
       await this.markClickableElements();
-      return this.captureScreenshot();
     } catch (error) {
       console.error('Error analyzing website:', error);
       throw error;
@@ -159,7 +158,7 @@ export class CopyCatService implements OnModuleDestroy {
           label.style.top = `${box.y - 20}px`;
           label.style.color = 'red';
           label.style.fontSize = '14px';
-          label.style.fontWeight = 'bold';
+          label.style.fontWeight = 'normal';
           label.style.zIndex = '100000';
 
           document.body.appendChild(highlight);
@@ -217,38 +216,64 @@ export class CopyCatService implements OnModuleDestroy {
     return [
       {
         type: 'text',
-        text: `You are a browser automation assistant. Follow these rules:
-  1. Analyze the current screenshot with numbered elements
-  2. Respond with JSON containing:
-     - "actions": Array of actions (see allowed actions below)
-     - "summary": Brief step summary (1-2 sentences)
-     - "status": "continue" or "finish"
+        text: `You are a browser automation assistant using Playwright. Analyze the screenshot and follow these rules:
 
-  Allowed actions:
-  - click: Standard left click
-  - double_click: Double left click
-  - right_click: Right click context menu
-  - type: Input text (requires 'value')
-  - select: Choose dropdown option (requires 'value')
-  - hover: Mouse hover over element
-  - wait: Pause execution (value in seconds)
-  - navigate: Load URL (value as full URL)
-  - scroll: Scroll page (value as 'up', 'down', or pixels)
-  - press_key: Keyboard key (value like 'Enter' or 'Tab')
-  - drag: Drag and drop (value as target index)
+    Rules:
+    1. Examine the screenshot with numbered interactive elements
+    2. Generate actions in JSON format with:
+       - "actions": Array of Playwright commands (use only allowed actions)
+       - "summary": Concise step description (1-2 sentences)
+       - "status": "continue" or "finish"
 
-  index = Numbered box in screenshot encircling elements
-  Conversation history: ${conversationSummary}
+    Allowed Actions (Playwright-specific):
+    - click(index): Left-click element
+    - double_click(index): Double left-click
+    - right_click(index): Right-click context menu
+    - type(index, value): Input text (supports Unicode)
+    - select(index, value): Select dropdown option
+    - hover(index): Mouse hover
+    - wait(value): Pause in seconds
+    - navigate(value): Load URL
+    - scroll(value): Scroll ('up', 'down', or pixels)
+    - press_key(value): Keyboard action (single key or modifier combo)
+    - drag(index, targetIndex): Drag and drop
 
-  Example response:
-  {
-    "actions": [
-      { "index": 1, "action": "click", "reason": "Open menu" },
-      { "index": 5, "action": "type", "value": "Paris", "reason": "Set destination" }
-    ],
-    "summary": "Opened travel menu and entered destination",
-    "status": "continue"
-  }\n\n${originalPrompt}`,
+    Keyboard Specifics:
+    - Use Playwright key names: 'ArrowUp', 'Enter', 'Control', etc.
+    - Combine modifiers with '+': 'Control+V', 'Shift+ArrowDown'
+    - Common combinations:
+      - Copy: 'Control+C'
+      - Paste: 'Control+V'
+      - Select All: 'Control+A'
+      - Tab Navigation: 'Control+Tab'
+      - Refresh: 'F5'
+
+    Response Requirements:
+    1. Specify element indexes from screenshot
+    2. For text input, include exact values
+    3. Chain related actions (click -> type -> press_key)
+    4. Use 'wait' strategically between actions
+
+    Example Workflow:
+    User: "Search for playwright docs and open first result"
+    Response:
+    {
+      "actions": [
+        { "index": 1, "action": "click", "reason": "Focus search field" },
+        { "index": 1, "action": "type", "value": "playwright docs", "reason": "Enter query" },
+        { "action": "press_key", "value": "Enter", "reason": "Submit search" },
+        { "index": 5, "action": "click", "reason": "Open first result" }
+      ],
+      "summary": "Searched for playwright docs and opened first result",
+      "status": "finish"
+    }
+
+    Current Context:
+    ${conversationSummary}
+
+    User Instruction:
+    ${originalPrompt}
+    `,
       },
       {
         type: 'image_url',
@@ -291,11 +316,6 @@ export class CopyCatService implements OnModuleDestroy {
 
         conversationSummary += `- ${stepSummary}\n`;
 
-        if (status === 'finish') {
-          console.log('Automation completed successfully');
-          break;
-        }
-
         if (actions.length > 0) {
           await this.executeActions(actions);
 
@@ -319,6 +339,11 @@ export class CopyCatService implements OnModuleDestroy {
               'No valid actions received. Please provide actions in JSON format.',
           });
         }
+
+        if (status === 'finish') {
+          console.log('Automation completed successfully');
+          break;
+        }
       } catch (error) {
         messages.push(
           { role: 'assistant', content: assistantResponse },
@@ -335,8 +360,9 @@ export class CopyCatService implements OnModuleDestroy {
   }
 
   async executeActions(actions: AutomationAction[]): Promise<void> {
-    for (const action of actions) {
+    for await (const action of actions) {
       try {
+        await this.markClickableElements();
         await this.browserAutomationService.executeAction(
           this.page,
           action,

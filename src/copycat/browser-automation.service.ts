@@ -170,10 +170,34 @@ export class BrowserAutomationService {
     const targetXpath = elementMap[parseInt(targetIndex, 10)]?.xpath;
     if (!targetXpath) throw new Error(`Invalid target index: ${targetIndex}`);
 
-    const source = await this.getVisibleElement(page, sourceXpath);
-    const target = await this.getVisibleElement(page, targetXpath);
+    // Get source and target elements using locators
+    const sourceLocator = page.locator(`xpath=${sourceXpath}`);
+    const targetLocator = page.locator(`xpath=${targetXpath}`);
 
-    await source.dragTo(target);
+    // Wait for both elements to be visible
+    await sourceLocator.waitFor({ state: 'visible' });
+    await targetLocator.waitFor({ state: 'visible' });
+
+    // Get the bounding boxes of both elements
+    const sourceBoundingBox = await sourceLocator.boundingBox();
+    const targetBoundingBox = await targetLocator.boundingBox();
+
+    if (!sourceBoundingBox || !targetBoundingBox) {
+      throw new Error('Unable to get element positions for drag operation');
+    }
+
+    // Perform the drag and drop operation
+    await page.mouse.move(
+      sourceBoundingBox.x + sourceBoundingBox.width / 2,
+      sourceBoundingBox.y + sourceBoundingBox.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      targetBoundingBox.x + targetBoundingBox.width / 2,
+      targetBoundingBox.y + targetBoundingBox.height / 2,
+      { steps: 10 }, // Makes the drag movement smoother
+    );
+    await page.mouse.up();
   }
 
   private async getVisibleElement(page: Page, xpath: string) {
