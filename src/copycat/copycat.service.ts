@@ -328,6 +328,7 @@ export class CopyCatService implements OnModuleDestroy {
   }
 
   private createSystemMessageContent(
+    screenshotUrl: string,
     originalPrompt: string,
   ): ChatCompletionUserMessageParam['content'] {
     // Detect platform architecture
@@ -400,40 +401,29 @@ export class CopyCatService implements OnModuleDestroy {
   ${originalPrompt}
   `,
       },
+      {
+        type: 'image_url',
+        image_url: { url: screenshotUrl },
+      },
     ];
   }
 
   async runAutomation(message: string) {
+    await this.markClickableElements();
+    const screenshot = await this.captureScreenshot();
 
+    await this.removeMarkings();
     let messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
       {
         role: 'user',
         content: this.createSystemMessageContent(
+          screenshot,
           message,
         ),
       },
     ];
 
     while (true) {
-      await this.markClickableElements();
-      const screenshot = await this.captureScreenshot();
-      messages.push({
-        role: 'user',
-        content: [
-          {
-            "type": "text",
-            "text": `Here is the screenshot of the screen`
-          },
-          {
-            "type": "image_url",
-            "image_url": {
-              "url": screenshot
-            }
-          }]
-      });
-
-      await this.removeMarkings();
-
       const result = await client.chat.completions.create({
         model: 'Qwen/Qwen2-VL-72B-Instruct',
         messages: messages,
@@ -442,7 +432,17 @@ export class CopyCatService implements OnModuleDestroy {
       const assistantResponse = result.choices[0].message.content;
 
       try {
-        const response = JSON.parse(assistantResponse);
+        let response = {
+          "status": "finish",
+          "actions": []
+        };
+
+        try {
+          response = JSON.parse(assistantResponse);
+          console.log("Valid JSON:", response);
+        } catch (error) {
+            console.error("Invalid JSON:", error.message);
+        }
 
         const actions: AutomationAction[] = response.actions || [];
         const status = response.status || 'continue';
@@ -450,17 +450,49 @@ export class CopyCatService implements OnModuleDestroy {
         if (actions.length > 0) {
           messages.push({
             role: 'assistant',
-            content: actions.toString()
+            content: "Actions to be taken: \n\n" + JSON.stringify(actions)
           });
-          // this function should return what actions were taken so we can append it to the messages array
           const response = await this.executeActions(actions);
           messages.push({
             role: 'user',
-            content: response
+            content: "Actions taken: \n\n" + response
           });
 
           await this.page?.waitForLoadState('networkidle');
         }
+
+        await this.markClickableElements();
+        const screenshot = await this.captureScreenshot();
+        
+        // Process existing messages to replace images with text
+        messages = messages.map(msg => {
+          if (msg.role === 'user') {
+            const content = msg.content;
+            if (Array.isArray(content)) {
+              const hasImage = content.some(part => part.type === 'image_url');
+              if (hasImage) {
+                return {
+                  ...msg,
+                  content: 'screenshot redacted ...'
+                };
+              }
+            }
+          }
+          return msg;
+        });
+
+        // Add new image message
+        messages.push({
+          role: 'user',
+          content: [{
+            "image_url": {
+              "url": screenshot,
+            },
+            "type": "image_url" 
+          }]
+        });
+
+        await this.removeMarkings();
 
         if (status === 'finish') {
           return assistantResponse;
@@ -469,7 +501,6 @@ export class CopyCatService implements OnModuleDestroy {
         console.error(error)
         console.error("We don't care, pass on to the next iteration ...");
       }
-
     }
   }
 
