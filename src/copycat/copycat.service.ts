@@ -33,24 +33,48 @@ export class CopyCatService implements OnModuleDestroy {
   async initialize(): Promise<void> {
     if (this.isBrowserInitialized()) return;
 
+    // Launch the browser with the desired configuration
     this.browser = await chromium.launch({
-      headless: false,
-      executablePath:
-        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-      args: [
-        '--disable-blink-features=AutomationControlled',
-        '--disable-features=IsolateOrigins,site-per-process',
-        '--window-size=1920,1080',
-      ],
+        headless: false,
+        executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        args: [
+            '--disable-blink-features=AutomationControlled',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--window-size=1920,1080', // Initial window size
+            '--start-maximized', // Start the browser maximized
+        ],
     });
 
-    this.page = await this.browser.newPage();
+    // Create a new browser context
+    const context = await this.browser.newContext({
+        viewport: { width: 1920, height: 1080 },
+        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        permissions: ['geolocation'],
+        colorScheme: 'dark',
+        locale: 'en-US',
+        deviceScaleFactor: 1,
+        hasTouch: false,
+    });
+
+    // Create a new page
+    this.page = await context.newPage();
 
     // Override navigator.webdriver
     await this.page.addInitScript(() => {
-      Object.defineProperty(navigator, 'webdriver', {
-        get: () => undefined,
-      });
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => undefined,
+        });
+    });
+
+    // Make the browser go full screen
+    await this.page.evaluate(() => {
+        // Use the Fullscreen API to request full screen
+        if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen();
+        } else if ((document.documentElement as any).webkitRequestFullscreen) {
+            // For older versions of Chrome/Safari
+            (document.documentElement as any).webkitRequestFullscreen();
+        }
     });
   }
 
@@ -75,9 +99,11 @@ export class CopyCatService implements OnModuleDestroy {
   private async setupPage(url: string): Promise<void> {
     if (!this.page) return;
 
-    await this.page.setViewportSize({ width: 1920, height: 1080 });
+    // await this.page.setViewportSize({ width: 1920, height: 1080 });
     await this.page.goto(url);
-    await this.page.waitForLoadState('networkidle');
+    await this.page.waitForLoadState('networkidle', {timeout: 3000}).catch(() => { 
+      console.log("Timeout waiting for network idle @ setupPage")
+    });
 
     await this.page.evaluate(() => {
       document
@@ -88,40 +114,37 @@ export class CopyCatService implements OnModuleDestroy {
 
   async markClickableElements() {
     if (!this.page) return;
-
     this.elementMap = {};
-    const elements = await this.page.$$(
-      `
-        a[href]:not([disabled]):not([aria-hidden="true"]),
-        button:not([disabled]):not([aria-hidden="true"]),
-        input:not([disabled]):not([type="hidden"]):not([aria-hidden="true"]),
-        textarea:not([disabled]):not([aria-hidden="true"]),
-        select:not([disabled]):not([aria-hidden="true"]),
-        [role="button"]:not([disabled]):not([aria-hidden="true"]),
-        [role="link"]:not([disabled]):not([aria-hidden="true"]),
-        [role="menuitem"]:not([disabled]):not([aria-hidden="true"]),
-        [role="option"]:not([disabled]):not([aria-hidden="true"]),
-        [role="switch"]:not([disabled]):not([aria-hidden="true"]),
-        [role="tab"]:not([disabled]):not([aria-hidden="true"]),
-        [role="checkbox"]:not([disabled]):not([aria-hidden="true"]),
-        [role="radio"]:not([disabled]):not([aria-hidden="true"]),
-        [role="combobox"]:not([disabled]):not([aria-hidden="true"]),
-        [role="textbox"]:not([disabled]):not([aria-hidden="true"]),
-        [role="searchbox"]:not([disabled]):not([aria-hidden="true"]),
-        [role="spinbutton"]:not([disabled]):not([aria-hidden="true"]),
-        [role="slider"]:not([disabled]):not([aria-hidden="true"]),
-        [onclick]:not([disabled]):not([aria-hidden="true"]),
-        [tabindex]:not([tabindex="-1"]):not([disabled]):not([aria-hidden="true"]),
-        label[for]:not([disabled]):not([aria-hidden="true"]),
-        [contenteditable="true"]:not([disabled]):not([aria-hidden="true"])
-      `.trim()
-    );
 
+    await sleep(1000); // Wait for the page to load
+    const elements = await this.page.$$(
+      'input, textarea, select, button, a[href], label'.trim() 
+    );
+    
     const occupiedPositions = new Set();
 
     for (let i = 0; i < elements.length; i++) {
       const element = elements[i];
       const box = await element.boundingBox();
+
+      // Define an array of high-contrast colors
+      const colors = [
+        '#FF0000', // Red
+        '#00FF00', // Lime Green
+        '#0000FF', // Blue
+        '#FFA500', // Orange
+        '#800080', // Purple
+        '#008080', // Teal
+        '#FF69B4', // Hot Pink
+        '#4B0082', // Indigo
+        '#006400', // Dark Green
+        '#8B0000', // Dark Red
+        '#4169E1', // Royal Blue
+        '#FFD700', // Gold
+      ];
+
+      // Get color for current element (cycle through colors array)
+      const currentColor = colors[i % colors.length];
 
       if (!box) continue;
 
@@ -173,7 +196,7 @@ export class CopyCatService implements OnModuleDestroy {
       this.elementMap[i + 1] = { xpath, text };
 
       await this.page.evaluate(
-        ({ box, i }) => {
+        ({ box, i, currentColor }) => {
           const highlight = document.createElement('div');
           highlight.className = 'highlight-overlay';
           highlight.style.position = 'absolute';
@@ -181,9 +204,13 @@ export class CopyCatService implements OnModuleDestroy {
           highlight.style.top = `${box.y}px`;
           highlight.style.width = `${box.width}px`;
           highlight.style.height = `${box.height}px`;
-          highlight.style.border = '2px solid red';
+          highlight.style.border = `3px solid ${currentColor}`; // Thicker border
           highlight.style.zIndex = '99999';
           highlight.style.pointerEvents = 'none';
+
+          // Add ARIA label for accessibility
+          highlight.setAttribute('role', 'presentation');
+          highlight.setAttribute('aria-label', `Highlighted element ${i + 1}`);
 
           const label = document.createElement('div');
           label.className = 'number-label';
@@ -191,15 +218,23 @@ export class CopyCatService implements OnModuleDestroy {
           label.style.position = 'absolute';
           label.style.left = `${box.x}px`;
           label.style.top = `${box.y - 20}px`;
-          label.style.color = 'red';
-          label.style.fontSize = '14px';
-          label.style.fontWeight = 'normal';
+          label.style.color = currentColor;
+          label.style.fontSize = '16px'; // Larger font size
+          label.style.fontWeight = 'bold';
           label.style.zIndex = '100000';
+          label.style.backgroundColor = '#FFFFFF'; // White background
+          label.style.padding = '2px 6px';
+          label.style.borderRadius = '3px';
+          label.style.boxShadow = '0 0 2px rgba(0,0,0,0.3)';
+
+          // Add ARIA label for accessibility
+          label.setAttribute('role', 'presentation');
+          label.setAttribute('aria-label', `Element number ${i + 1}`);
 
           document.body.appendChild(highlight);
           document.body.appendChild(label);
         },
-        { box, i },
+        { box, i, currentColor },
       );
     }
   }
@@ -255,15 +290,16 @@ export class CopyCatService implements OnModuleDestroy {
     return [
       {
         type: 'text',
-        text: `You are a browser automation assistant using Playwright. Analyze the screenshot and the Original Instruction and follow these rules:
+        text: `You are a browser automation assistant using Playwright. You are currently on ${this.page.url()}, if you find yourself in the wrong url, use navigate action to go back to the correct url. Analyze the screenshot and the Original Instruction and follow these rules:
 
   Rules:
-  1. Examine the screenshot with numbered interactive elements
+  1. Examine the screenshot with numbered interactive elements (the boxes and numbers are color coded so you know which number belongs to which box). **You must use the colors to identify the element indexes **
   2. Generate actions in JSON format with:
      - "actions": Array of Playwright commands (use only allowed actions)
      - "summary": Concise step description (1-2 sentences)
      - "status": "continue" or "finish"
   3. You are working alongside the user as an assistant, so part of the work might already be done, you need to finish the remaining. Only generate actions for what is still pending
+  4. You may have multiple options to choose from, reflect on what the user said and then take the best course of action. For example, the first link isn't always the best option to choose from.
 
   Allowed Actions (Playwright-specific):
   - click(index): Left-click element
@@ -356,13 +392,14 @@ export class CopyCatService implements OnModuleDestroy {
         if (actions.length > 0) {
           // this function should return what actions were taken so we can append it to the messages array
           await this.executeActions(actions);
-        } 
+          await this.page?.waitForLoadState('networkidle');
+        }
 
         if (status === 'finish') {
-          console.log('Automation completed successfully');
-          break;
+          return assistantResponse;
         }
       } catch (error) {
+        console.error(error)
         console.error("We don't care, pass on to the next iteration ...");
       }
 

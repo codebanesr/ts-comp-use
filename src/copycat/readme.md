@@ -75,3 +75,5 @@ Call log:
   - waiting for locator('xpath=/html/body/div[1]/div[3]/form[1]/div[1]/div[1]/div[1]/div[1]/div[3]/div[3]') to be visible
     2 × waiting for navigation to finish...
       - navigated to "https://www.google.com/search?q=chatgpt&sca_esv=95493269825c3f0f&source=hp&ei=DoSbZ-GdFumPvr0P8tSaoAs&iflsig=ACkRmUkAAAAAZ5uSHi1A0t-l7j3mvH866rz15-UrCsAJ&ved=0ahUKEwjh3JDey52LAxXph68BHXKqBrQQ4dUDCBA&…"
+
+If an element is not present in view, don't try to execute the action

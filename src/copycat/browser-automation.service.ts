@@ -35,9 +35,34 @@ export class BrowserAutomationService {
   ]);
 
   private async handleClick(page: Page, xpath: string): Promise<void> {
-    const element = await this.getVisibleElement(page, xpath);
-    await element.scrollIntoViewIfNeeded();
-    await element.click();
+    try {
+      const element = await this.getVisibleElement(page, xpath);
+      
+      // Optional: Check if the element is in viewport
+      const isInViewport = await element.evaluate((el) => {
+        const rect = el.getBoundingClientRect();
+        return (
+          rect.top >= 0 &&
+          rect.left >= 0 &&
+          rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
+          rect.right <= (window.innerWidth || document.documentElement.clientWidth)
+        );
+      });
+  
+      if (!isInViewport) {
+        await element.scrollIntoViewIfNeeded();
+      }
+  
+      await element.click({ force: true });
+      
+      // Wait for network idle if necessary
+      await page.waitForLoadState('networkidle', {timeout: 3000}).catch(() => { /* Ignore timeout if no navigation occurs */ });
+  
+    } catch (error) {
+      console.error(`Error clicking element with xpath ${xpath}: ${error.message}`);
+      // You can add custom error handling here if needed
+      return; // Continue execution after logging the error
+    }
   }
 
   private async handleDoubleClick(page: Page, xpath: string): Promise<void> {
@@ -61,7 +86,7 @@ export class BrowserAutomationService {
     const element = await this.getVisibleElement(page, xpath);
     await element.click({ clickCount: 3 });
     await element.press('Backspace');
-    await element.type(value, { delay: 100 });
+    await page.keyboard.type(value);
   }
 
   private async handleSelect(
@@ -82,6 +107,7 @@ export class BrowserAutomationService {
   private async handleNavigate(page: Page, url?: string): Promise<void> {
     if (!url) throw new Error('URL required for navigate action');
     await page.goto(url);
+    await page.waitForLoadState('networkidle', {timeout: 3000}); // Wait for navigation to complete
   }
 
   private async handleHover(page: Page, xpath: string): Promise<void> {
@@ -149,14 +175,13 @@ export class BrowserAutomationService {
         await this.handlePressKey(page, elementXPath, action.value);
         break;
       case 'drag':
-        console.log('drag not supported yet');
-        // await this.handleDrag(page, elementXPath!, action.value, elementMap);
+        await this.handleDrag(page, elementXPath!, action.value, elementMap);
         break;
       default:
         throw new Error(`Unsupported action: ${action.action}`);
     }
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('networkidle', {timeout: 3000});
   }
 
   private logActionExecution(
@@ -214,20 +239,24 @@ export class BrowserAutomationService {
   private async handleScroll(page: Page, value?: string): Promise<void> {
     const scrollValue = value || '0';
 
+    // Get the current viewport dimensions
+    const viewport = page.viewportSize();
+    const viewportHeight = viewport.height || 0;
+
     if (scrollValue === 'up') {
-      await page.mouse.wheel(0, -window.innerHeight * 0.8);
+        await page.mouse.wheel(0, -viewportHeight * 0.8);
     } else if (scrollValue === 'down') {
-      await page.mouse.wheel(0, window.innerHeight * 0.8);
+        await page.mouse.wheel(0, viewportHeight * 0.8);
     } else {
-      const pixels = parseInt(scrollValue, 10);
-      await page.mouse.wheel(0, pixels);
+        const pixels = parseInt(scrollValue, 10);
+        await page.mouse.wheel(0, pixels);
     }
   }
 
   // Enhanced verification for keyboard actions
   private async getVisibleElement(page: Page, xpath: string) {
     const locator = page.locator(`xpath=${xpath}`);
-    await locator.waitFor({ state: 'visible' });
+    await locator.waitFor({ state: 'visible', timeout: 2000 });
     const element = await locator.elementHandle();
     if (!element) throw new Error(`Element not found: ${xpath}`);
     return element;
