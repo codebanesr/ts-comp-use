@@ -1,5 +1,6 @@
 // browser-automation.service.ts
 import { Injectable, Logger } from '@nestjs/common';
+import { sleep } from 'openai/core';
 import { Page } from 'playwright';
 
 export interface AutomationAction {
@@ -101,7 +102,7 @@ export class BrowserAutomationService {
 
   private async handleWait(waitTime?: string): Promise<void> {
     const duration = parseInt(waitTime || '1', 10) * 1000;
-    await new Promise((resolve) => setTimeout(resolve, duration));
+    await sleep(duration);
   }
 
   private async handleNavigate(page: Page, url?: string): Promise<void> {
@@ -208,7 +209,7 @@ export class BrowserAutomationService {
       const element = await this.getVisibleElement(page, elementXPath);
       await element.press(value);
     } else {
-      await page.keyboard.press(value);
+      await page.keyboard.press(value, { delay: 100 });
     }
   }
 

@@ -118,7 +118,46 @@ export class CopyCatService implements OnModuleDestroy {
 
     await sleep(1000); // Wait for the page to load
     const elements = await this.page.$$(
-      'input, textarea, select, button, a[href], label'.trim() 
+      [
+        // Standard form elements
+        'button',
+        'input:not([type="hidden"])',
+        'textarea',
+        'select',
+        
+        // Interactive elements
+        'a[href]',
+        '[role="button"]',
+        '[role="link"]',
+        '[role="menuitem"]',
+        '[role="option"]',
+        '[role="switch"]',
+        '[role="tab"]',
+        
+        // Form controls
+        'label',
+        '[role="checkbox"]',
+        '[role="radio"]',
+        '[role="combobox"]',
+        '[role="slider"]',
+        '[role="spinbutton"]',
+        
+        // Custom interactive elements
+        '[contenteditable="true"]',
+        '[tabindex]:not([tabindex="-1"])',
+        
+        // Controls with click handlers
+        '[onClick]',
+        '[onKeyPress]',
+        '[onKeyDown]',
+        '[onKeyUp]',
+        
+        // Common interactive class names
+        '.clickable',
+        '.interactive',
+        '.button',
+        '.btn'
+      ].join(', ').trim()
     );
     
     const occupiedPositions = new Set();
@@ -330,7 +369,7 @@ export class CopyCatService implements OnModuleDestroy {
   1. ** index are numbers that we have given to each element after adding a box around them, this is what we use to tell each other what element to interact with **
   2. For text input, include exact values
   3. Chain related actions (click -> type -> press_key)
-  4. Use 'wait' strategically between actions
+  4. Use 'wait' strategically between actions, for example when filling out a form, wait for the dropdown to appear before taking a screenshot again and selecting it, wait should always be followed by screenshot
   5. Make sure to not use enter and click for the same action.
 
   Example Workflow:

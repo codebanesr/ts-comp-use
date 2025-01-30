@@ -59,4 +59,41 @@ taking a screenshot
 
 
 
-Typing should be one shot, no need to add simulation
+
+[Nest] 52827  - 01/30/2025, 11:01:28 PM   ERROR [CopyCatService] Failed to execute action select on element 182
+[Nest] 52827  - 01/30/2025, 11:01:28 PM   ERROR [CopyCatService] Error: elementHandle.selectOption: Error: Element is not a <select> element
+Call log:
+  - attempting select option action
+    - waiting for element to be visible and enabled
+
+elementHandle.selectOption: Error: Element is not a <select> element
+Call log:
+  - attempting select option action
+    - waiting for element to be visible and enabled
+
+    at BrowserAutomationService.handleSelect (/Users/shanurrahman/Documents/spc/nodecomp/src/copycat/browser-automation.service.ts:99:19)
+    at BrowserAutomationService.executeAction (/Users/shanurrahman/Documents/spc/nodecomp/src/copycat/browser-automation.service.ts:160:9)
+    at CopyCatService.executeActions (/Users/shanurrahman/Documents/spc/nodecomp/src/copycat/copycat.service.ts:451:9)
+    at CopyCatService.runAutomation (/Users/shanurrahman/Documents/spc/nodecomp/src/copycat/copycat.service.ts:433:11)
+    at CopycatController.run (/Users/shanurrahman/Documents/spc/nodecomp/src/copycat/copycat.controller.ts:21:20)
+    at /Users/shanurrahman/Documents/spc/nodecomp/async /Users/shanurrahman/Documents/spc/nodecomp/node_modules/.pnpm/@nestjs+core@10.4.15_@nes
+
+
+---
+
+
+We don't care, pass on to the next iteration ...
+taking a screenshot
+SyntaxError: Unexpected end of JSON input
+    at JSON.parse (<anonymous>)
+    at CopyCatService.runAutomation (/Users/shanurrahman/Documents/spc/nodecomp/src/copycat/copycat.service.ts:426:31)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at CopycatController.run (/Users/shanurrahman/Documents/spc/nodecomp/src/copycat/copycat.controller.ts:21:20)
+    at async /Users/shanurrahman/Documents/spc/nodecomp/node_modules/.pnpm/@nestjs+core@10.4.15_@nestjs+common@10.4.15_reflect-metadata@0.1.14_rxjs@7.8.1__@nestjs+platf_olwtllqpyenoaujei23lmyaope/node_modules/@nestjs/core/router/router-execution-context.js:46:28
+    at async /Users/shanurrahman/Documents/spc/nodecomp/node_modules/.pnpm/@nestjs+core@10.4.15_@nestjs+common@10.4.15_reflect-metadata@0.1.14_
+
+
+---
+
+
+if the screenshot has an error, pass it into the messages block and mention the error so ai can correct itself
