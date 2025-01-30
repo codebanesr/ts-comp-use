@@ -238,6 +238,8 @@ export class CopyCatService implements OnModuleDestroy {
     - press_key(value): Keyboard action (single key or modifier combo)
     - drag(index, targetIndex): Drag and drop
 
+    3. Only output the actions you can take on this screenshot. We will ask you for more instructions once we navigate to the next page.
+
     Keyboard Specifics:
     - Use Playwright key names: 'ArrowUp', 'Enter', 'Control', etc.
     - Combine modifiers with '+': 'Control+V', 'Shift+ArrowDown'
