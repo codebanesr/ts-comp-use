@@ -192,6 +192,17 @@ export class CopyCatService implements OnModuleDestroy {
     }
   }
 
+  async removeMarkings() {
+    await this.page.evaluate(() => {
+      document
+        .querySelectorAll('.highlight-overlay')
+        .forEach((highlight) => highlight.remove());
+      document
+        .querySelectorAll('.number-label')
+        .forEach((label) => label.remove());
+    });
+  }
+
   async captureScreenshot(): Promise<string> {
     if (!this.page) throw new Error('Page is not initialized.');
 
@@ -278,7 +289,7 @@ export class CopyCatService implements OnModuleDestroy {
     - Refresh: 'F5'
 
   Response Requirements:
-  1. Specify element indexes from screenshot
+  1. ** index are numbers that we have given to each element after adding a box around them, this is what we use to tell each other what element to interact with **
   2. For text input, include exact values
   3. Chain related actions (click -> type -> press_key)
   4. Use 'wait' strategically between actions
@@ -288,12 +299,12 @@ export class CopyCatService implements OnModuleDestroy {
   Response:
   {
     "actions": [
-      { "index": 1, "action": "click", "reason": "Focus search field" },
-      { "index": 1, "action": "type", "value": "playwright docs", "reason": "Enter query" },
+      { "index": 12, "action": "click", "reason": "Focus search field" },
+      { "index": 12, "action": "type", "value": "playwright docs", "reason": "Enter query" },
       { "action": "press_key", "value": "Enter", "reason": "Submit search" },
       { "index": 5, "action": "click", "reason": "Open first result" }
     ],
-    "summary": "Searched for playwright docs and opened first result",
+    "summary": "Generated actions to search for playwright docs and open first result. Next is to use a screenshot to verify the result.",
     "status": "finish"
   }
 
@@ -317,6 +328,7 @@ export class CopyCatService implements OnModuleDestroy {
     let conversationSummary = 'Conversation History:\n';
     await this.markClickableElements();
     let currentScreenshot = await this.captureScreenshot();
+    await this.removeMarkings();
 
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
       {
@@ -329,6 +341,7 @@ export class CopyCatService implements OnModuleDestroy {
       },
     ];
 
+    await this.removeMarkings();
     while (true) {
       const result = await client.chat.completions.create({
         model: 'Qwen/Qwen2-VL-72B-Instruct',
@@ -339,7 +352,7 @@ export class CopyCatService implements OnModuleDestroy {
 
       try {
         const response = JSON.parse(assistantResponse);
-        console.log(JSON.stringify(response, null, 2));
+        console.log(response);
 
         const actions: AutomationAction[] = response.actions || [];
         const status = response.status || 'continue';
@@ -352,6 +365,7 @@ export class CopyCatService implements OnModuleDestroy {
 
           await this.markClickableElements();
           currentScreenshot = await this.captureScreenshot();
+          await this.removeMarkings();
 
           // Update messages with fresh context
           messages.length = 0;
@@ -373,7 +387,9 @@ export class CopyCatService implements OnModuleDestroy {
 
         if (status === 'finish') {
           console.log('Automation completed successfully');
-          break;
+
+          // verify the result, then either exit or continue;
+          // break;
         }
       } catch (error) {
         messages.push(
@@ -393,7 +409,6 @@ export class CopyCatService implements OnModuleDestroy {
   async executeActions(actions: AutomationAction[]): Promise<void> {
     for await (const action of actions) {
       try {
-        await this.markClickableElements();
         await this.browserAutomationService.executeAction(
           this.page,
           action,
