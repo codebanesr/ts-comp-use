@@ -7,6 +7,11 @@ import {
   AutomationAction,
   BrowserAutomationService,
 } from './browser-automation.service';
+import { sleep } from '@anthropic-ai/sdk/core';
+import {
+  ChatCompletionSystemMessageParam,
+  ChatCompletionUserMessageParam,
+} from 'openai/resources';
 
 const client = new OpenAI({
   apiKey: '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', // This is the default and can be omitted,
@@ -166,8 +171,6 @@ export class CopyCatService implements OnModuleDestroy {
         { box, i },
       );
     }
-
-    console.log('Element Number to XPath and Text mapping:', this.elementMap);
   }
 
   async captureScreenshot(): Promise<string> {
@@ -186,14 +189,16 @@ export class CopyCatService implements OnModuleDestroy {
     const screenshotName = `screenshot-${timestamp}.png`;
     const screenshotPath = path.join(screenshotFolder, screenshotName);
 
-    // Capture the screenshot and save it to the specified path
-    await this.page.screenshot({
-      path: screenshotPath,
+    // Capture the screenshot as a Buffer
+    const buffer = await this.page.screenshot({
+      path: screenshotPath, // Save to file
       fullPage: false,
       scale: 'css',
     });
 
-    return screenshotPath;
+    // Convert to base64 encoded string with data URL prefix
+    const base64String = buffer.toString('base64');
+    return `data:image/png;base64,${base64String}`;
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -208,134 +213,120 @@ export class CopyCatService implements OnModuleDestroy {
   }
 
   async runAutomation(message: string) {
+    let conversationSummary = 'Conversation History:\n';
+    await this.markClickableElements();
+    let currentScreenshot = await this.captureScreenshot();
+
+    const systemMessage: ChatCompletionUserMessageParam = {
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: `You are a browser automation assistant. Follow these rules:
+  1. Analyze the current screenshot with numbered elements
+  2. Respond with JSON containing:
+     - "actions": Array of { index: number, action: string, value?: string, reason: string }
+     - "summary": Brief summary of this step (1-2 sentences)
+     - "status": "continue" or "finish"
+  3. Consider this conversation history: ${conversationSummary}
+  4. Never refer to previous screenshots - only use the current one
+
+  Example response:
+  {
+    "actions": [{ "index": 1, "action": "click", "reason": "Open login" }],
+    "summary": "Clicked login button to access form",
+    "status": "continue"
+  }\n\n${message}`,
+        },
+        {
+          type: 'image_url',
+          image_url: { url: currentScreenshot },
+        },
+      ],
+    };
+
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      {
-        role: 'system',
-        content: `You are a helpful assistant that can run browser automation actions on a website. The way you do it is by taking a screenshot of the page and then predicting next actions
-          To make your job easier the screenshots will have all the elements labelled with a number. so your job is to give me back that number along with the actions as defined in the schema.`,
-      },
-      {
-        role: 'user',
-        content: message,
-      },
+      systemMessage,
     ];
 
-    do {
+    while (true) {
       const result = await client.chat.completions.create({
-        function_call: 'auto',
-        model: 'llama-3.3-70b-versatile',
+        model: 'gpt-4-vision-preview',
         messages: messages,
-        tools: [
-          {
-            type: 'function',
-            function: {
-              name: 'capture_screenshot',
-              description:
-                'Use this to take screenshot of the current page. Then you can decide what action to take next',
-              parameters: {},
-            },
-          },
-          {
-            type: 'function',
-            function: {
-              name: 'propose_actions',
-              description:
-                'Propose a list of automation actions to execute (click, type, select, etc). Returns an array of actions with element indices, action types, values, and execution reasons.',
-              parameters: {
-                type: 'object',
-                properties: {
-                  actions: {
-                    type: 'array',
-                    description: 'Array of automation actions to execute',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        index: {
-                          type: 'number',
-                          description:
-                            'Index of the element in the screenshot to interact with',
-                        },
-                        action: {
-                          type: 'string',
-                          enum: ['click', 'type', 'select', 'hover', 'wait'],
-                          description: 'Type of action to perform',
-                        },
-                        value: {
-                          type: 'string',
-                          description:
-                            'Optional value for actions like typing or selecting',
-                        },
-                        reason: {
-                          type: 'string',
-                          description:
-                            'Explanation why this action should be executed',
-                        },
-                        next_action: {
-                          type: 'string',
-                          description:
-                            'Optional description of subsequent action',
-                        },
-                      },
-                      required: ['index', 'action', 'reason'],
-                    },
-                  },
-                },
-                required: ['actions'],
-              },
-            },
-          },
-          {
-            type: 'function',
-            function: {
-              name: 'finish',
-              description:
-                'Use this tool to end the conversation once the user request has been met.',
-              parameters: {
-                type: 'object',
-                properties: {},
-                required: [],
-              },
-            },
-          },
-        ],
       });
 
-      if (result.choices[0].finish_reason === 'tool_calls') {
-        const tools = result.choices[0].message.tool_calls;
-        messages.push({
-          role: 'assistant',
-          tool_calls: tools,
-        });
+      const assistantResponse = result.choices[0].message.content;
 
-        for (const tool of tools) {
-          if (tool.function.name === 'capture_screenshot') {
-            // update the dictionary and send it to execute actions
-            await this.markClickableElements();
-            const result = await this.captureScreenshot();
-            messages.push({
-              role: 'tool',
-              tool_call_id: tool.id,
-              content: result,
-            });
-          } else if (tool.function.name === 'propose_actions') {
-            const actions = JSON.parse(
-              tool.function.arguments,
-            ) as AutomationAction[];
+      try {
+        const response = JSON.parse(assistantResponse);
+        const actions: AutomationAction[] = response.actions || [];
+        const status = response.status || 'continue';
+        const stepSummary = response.summary || 'No summary provided';
 
-            const result = await this.executeActions(actions);
+        // Update conversation history
+        conversationSummary += `- ${stepSummary}\n`;
 
-            messages.push({
-              role: 'tool',
-              tool_call_id: tool.id,
-              content: 'Ran all tools successfully',
-            });
-          } else if (tool.function.name === 'finish') {
-            break;
-          }
+        if (status === 'finish') {
+          console.log('Automation completed successfully');
+          break;
         }
+
+        if (actions.length > 0) {
+          await this.executeActions(actions);
+
+          // Update screenshot after actions
+          await this.markClickableElements();
+          currentScreenshot = await this.captureScreenshot();
+
+          // Reset messages with updated summary and new screenshot
+          messages.length = 0; // Clear previous messages
+          messages.push({
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                // Use a template string with explicit placeholder
+                text: `You are a browser automation assistant. Follow these rules:
+          1. Analyze the current screenshot with numbered elements
+          2. Respond with JSON containing:
+             - "actions": Array of { index: number, action: string, value?: string, reason: string }
+             - "summary": Brief summary of this step (1-2 sentences)
+             - "status": "continue" or "finish"
+          3. Consider this conversation history:
+          ${conversationSummary}
+          4. Never refer to previous screenshots - only use the current one
+
+          Example response:
+          {
+            "actions": [{ "index": 1, "action": "click", "reason": "Open login" }],
+            "summary": "Clicked login button to access form",
+            "status": "continue"
+          }\n\n${message}`,
+              },
+              {
+                type: 'image_url',
+                image_url: { url: currentScreenshot },
+              },
+            ],
+          });
+        } else {
+          messages.push({
+            role: 'user',
+            content:
+              'No valid actions received. Please provide actions in JSON format.',
+          });
+        }
+      } catch (error) {
+        console.error('JSON parse error:', error);
+        messages.push({
+          role: 'user',
+          content:
+            'Invalid response format. Please use the specified JSON format.',
+        });
       }
-      message = result.choices[0].message.content;
-    } while (true);
+
+      await sleep(1000);
+    }
   }
 
   async executeActions(actions: AutomationAction[]): Promise<void> {
