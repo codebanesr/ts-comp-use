@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { chromium, Browser, Page, BrowserContext } from 'playwright';
+import { chromium, Browser, Page } from 'playwright';
 import OpenAI from 'openai';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -14,6 +14,15 @@ const client = new OpenAI({
   apiKey: '9047ff792d95f758d6f21cc2440e37272951b5e4b86541f0f5083fe9c7cd84a4', // This is the default and can be omitted,
   baseURL: 'https://api.together.xyz/v1',
 });
+
+interface ActionResult {
+  actionType: string;
+  index: number | undefined;
+  reason: string;
+  succeeded: boolean;
+  details?: { value: string };
+  error?: string;
+}
 
 @Injectable()
 export class CopyCatService implements OnModuleDestroy {
@@ -319,7 +328,6 @@ export class CopyCatService implements OnModuleDestroy {
   }
 
   private createSystemMessageContent(
-    screenshotUrl: string,
     originalPrompt: string,
   ): ChatCompletionUserMessageParam['content'] {
     // Detect platform architecture
@@ -392,28 +400,39 @@ export class CopyCatService implements OnModuleDestroy {
   ${originalPrompt}
   `,
       },
-      {
-        type: 'image_url',
-        image_url: { url: screenshotUrl },
-      },
     ];
   }
 
   async runAutomation(message: string) {
+
+    let messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      {
+        role: 'user',
+        content: this.createSystemMessageContent(
+          message,
+        ),
+      },
+    ];
+
     while (true) {
       await this.markClickableElements();
       const screenshot = await this.captureScreenshot();
+      messages.push({
+        role: 'user',
+        content: [
+          {
+            "type": "text",
+            "text": `Here is the screenshot of the screen`
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": screenshot
+            }
+          }]
+      });
 
       await this.removeMarkings();
-      let messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-        {
-          role: 'user',
-          content: this.createSystemMessageContent(
-            screenshot,
-            message,
-          ),
-        },
-      ];
 
       const result = await client.chat.completions.create({
         model: 'Qwen/Qwen2-VL-72B-Instruct',
@@ -429,8 +448,17 @@ export class CopyCatService implements OnModuleDestroy {
         const status = response.status || 'continue';
 
         if (actions.length > 0) {
+          messages.push({
+            role: 'assistant',
+            content: actions.toString()
+          });
           // this function should return what actions were taken so we can append it to the messages array
-          await this.executeActions(actions);
+          const response = await this.executeActions(actions);
+          messages.push({
+            role: 'user',
+            content: response
+          });
+
           await this.page?.waitForLoadState('networkidle');
         }
 
@@ -445,21 +473,58 @@ export class CopyCatService implements OnModuleDestroy {
     }
   }
 
-  async executeActions(actions: AutomationAction[]): Promise<void> {
-    for await (const action of actions) {
-      try {
-        await this.browserAutomationService.executeAction(
-          this.page,
-          action,
-          this.elementMap,
-        );
-      } catch (error) {
-        this.logger.error(
-          `Failed to execute action ${action.action} on element ${action.index}`,
-          error,
-        );
-        throw error;
-      }
+  async executeActions(actions: AutomationAction[]): Promise<string> {
+    const actionResults: ActionResult[] = [];
+    
+    for (const action of actions) {
+        try {
+            const actionResult = await this.browserAutomationService.executeAction(
+                this.page,
+                action,
+                this.elementMap
+            );
+            
+            // Assuming executeAction returns a result object
+            actionResults.push({
+                actionType: action.action,
+                index: action.index,
+                reason: action.reason,
+                succeeded: true,
+                details: { value: action.value || '' }
+            });
+        } catch (error) {
+            this.logger.error(
+                `Failed to execute action ${action.action} on element ${action.index}`,
+                error
+            );
+            
+            // Collect failure information
+            actionResults.push({
+                actionType: action.action,
+                index: action.index,
+                reason: action.reason,
+                succeeded: false,
+                error: error.toString()
+            });
+        }
     }
+
+    // Generate the summary of all actions
+    const summary = this.generateSummary(actionResults);
+    this.logger.debug('Action Execution Summary:');
+    this.logger.debug(summary);
+
+    return summary;
+  }
+
+  generateSummary(actionResults: ActionResult[]): string {
+    return actionResults.map(result => {
+        const base = `Action: ${result.actionType}, Index: ${result.index || 'N/A'}, Reason: ${result.reason}`;
+        if (result.succeeded) {
+            return `${base} - Succeeded. Details: ${result.details?.value || 'N/A'}`;
+        } else {
+            return `${base} - Failed. Error: ${result.error || 'Unknown error'}`;
+        }
+    }).join('\n');
   }
 }
