@@ -204,25 +204,15 @@ export class CopyCatService implements OnModuleDestroy {
   }
 
   async captureScreenshot(): Promise<string> {
+    console.log("taking a screenshot")
     if (!this.page) throw new Error('Page is not initialized.');
-
     // Define the folder where screenshots will be saved
     const screenshotFolder = 'screenshots';
 
-    // Create the folder if it doesn't exist
-    if (!fs.existsSync(screenshotFolder)) {
-      fs.mkdirSync(screenshotFolder);
-    }
-
-    // Generate a unique filename using a timestamp
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const screenshotName = `screenshot-${timestamp}.png`;
-    const screenshotPath = path.join(screenshotFolder, screenshotName);
-
     // Capture the screenshot as a Buffer
     const buffer = await this.page.screenshot({
-      path: screenshotPath, // Save to file
       fullPage: false,
+      path: path.join(screenshotFolder, `screenshot_${new Date().getTime()}.png`),
       scale: 'css',
     });
 
@@ -243,7 +233,6 @@ export class CopyCatService implements OnModuleDestroy {
   }
 
   private createSystemMessageContent(
-    conversationSummary: string,
     screenshotUrl: string,
     originalPrompt: string,
   ): ChatCompletionUserMessageParam['content'] {
@@ -262,6 +251,7 @@ export class CopyCatService implements OnModuleDestroy {
      - "actions": Array of Playwright commands (use only allowed actions)
      - "summary": Concise step description (1-2 sentences)
      - "status": "continue" or "finish"
+  3. You are working alongside the user as an assistant, so part of the work might already be done, you need to finish the remaining. Only generate actions for what is still pending
 
   Allowed Actions (Playwright-specific):
   - click(index): Left-click element
@@ -293,6 +283,7 @@ export class CopyCatService implements OnModuleDestroy {
   2. For text input, include exact values
   3. Chain related actions (click -> type -> press_key)
   4. Use 'wait' strategically between actions
+  5. Make sure to not use enter and click for the same action.
 
   Example Workflow:
   User: "Search for playwright docs and open first result"
@@ -304,16 +295,13 @@ export class CopyCatService implements OnModuleDestroy {
       { "action": "press_key", "value": "Enter", "reason": "Submit search" },
       { "index": 5, "action": "click", "reason": "Open first result" }
     ],
-    "summary": "Generated actions to search for playwright docs and open first result. Next is to use a screenshot to verify the result.",
     "status": "finish"
   }
 
   Current Platform: ${os === 'darwin' ? 'macOS' : 'Linux'}
 
-  Current Context:
-  ${conversationSummary}
 
-  User Instruction:
+  Original Instruction:
   ${originalPrompt}
   `,
       },
@@ -325,65 +313,39 @@ export class CopyCatService implements OnModuleDestroy {
   }
 
   async runAutomation(message: string) {
-    let conversationSummary = 'Conversation History:\n';
-    await this.markClickableElements();
-    let currentScreenshot = await this.captureScreenshot();
-    await this.removeMarkings();
-
-    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      {
-        role: 'user',
-        content: this.createSystemMessageContent(
-          conversationSummary,
-          currentScreenshot,
-          message,
-        ),
-      },
-    ];
-
-    await this.removeMarkings();
     while (true) {
+      await this.markClickableElements();
+      const screenshot = await this.captureScreenshot();
+      let messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+        {
+          role: 'user',
+          content: this.createSystemMessageContent(
+            screenshot,
+            message,
+          ),
+        },
+      ];
+
+
       const result = await client.chat.completions.create({
         model: 'Qwen/Qwen2-VL-72B-Instruct',
         messages: messages,
       });
 
+      await this.removeMarkings();
+
       const assistantResponse = result.choices[0].message.content;
 
       try {
         const response = JSON.parse(assistantResponse);
-        console.log(response);
 
         const actions: AutomationAction[] = response.actions || [];
         const status = response.status || 'continue';
-        const stepSummary = response.summary || 'No summary provided';
-
-        conversationSummary += `- ${stepSummary}\n`;
 
         if (actions.length > 0) {
+          // this function should return what actions were taken so we can append it to the messages array
           await this.executeActions(actions);
-
-          await this.markClickableElements();
-          currentScreenshot = await this.captureScreenshot();
-          await this.removeMarkings();
-
-          // Update messages with fresh context
-          messages.length = 0;
-          messages.push({
-            role: 'user',
-            content: this.createSystemMessageContent(
-              conversationSummary,
-              currentScreenshot,
-              message,
-            ),
-          });
-        } else {
-          messages.push({
-            role: 'user',
-            content:
-              'No valid actions received. Please provide actions in JSON format.',
-          });
-        }
+        } 
 
         if (status === 'finish') {
           console.log('Automation completed successfully');
@@ -392,14 +354,7 @@ export class CopyCatService implements OnModuleDestroy {
           // break;
         }
       } catch (error) {
-        messages.push(
-          { role: 'assistant', content: assistantResponse },
-          {
-            role: 'user',
-            content:
-              'Invalid response format. Please use the specified JSON format.',
-          },
-        );
+        console.error("We don't care, pass on to the next iteration ...");
       }
 
       await sleep(1000);

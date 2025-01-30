@@ -149,7 +149,8 @@ export class BrowserAutomationService {
         await this.handlePressKey(page, elementXPath, action.value);
         break;
       case 'drag':
-        await this.handleDrag(page, elementXPath!, action.value, elementMap);
+        console.log('drag not supported yet');
+        // await this.handleDrag(page, elementXPath!, action.value, elementMap);
         break;
       default:
         throw new Error(`Unsupported action: ${action.action}`);
