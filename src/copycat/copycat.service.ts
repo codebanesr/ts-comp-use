@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { chromium, Browser, Page } from 'playwright';
+import { chromium, Browser, Page, BrowserContext } from 'playwright';
 import OpenAI from 'openai';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -17,7 +17,7 @@ const client = new OpenAI({
 
 @Injectable()
 export class CopyCatService implements OnModuleDestroy {
-  private browser: Browser | null = null;
+  private browser: BrowserContext | null = null;
   private page: Page | null = null;
   private elementMap: { [key: number]: { xpath: string; text: string } } = {};
 
@@ -33,10 +33,10 @@ export class CopyCatService implements OnModuleDestroy {
   async initialize(): Promise<void> {
     if (this.isBrowserInitialized()) return;
 
-    this.browser = await chromium.launch({
+    this.browser = await chromium.launchPersistentContext('/Users/shanurrahman/Documents/spc/nodecomp/shanur', {
       headless: false,
       executablePath:
-        '/Users/shanurrahman/Library/Caches/ms-playwright/chromium-1148/chrome-mac/Chromium.app/Contents/MacOS/Chromium',
+        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
       args: [
         '--disable-blink-features=AutomationControlled',
         '--disable-features=IsolateOrigins,site-per-process',
@@ -44,18 +44,7 @@ export class CopyCatService implements OnModuleDestroy {
       ],
     });
 
-    const context = await this.browser.newContext({
-      viewport: { width: 1920, height: 1080 },
-      userAgent:
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      permissions: ['geolocation'],
-      colorScheme: 'dark',
-      locale: 'en-US',
-      deviceScaleFactor: 1,
-      hasTouch: false,
-    });
-
-    this.page = await context.newPage();
+    this.page = await this.browser.newPage();
 
     // Override navigator.webdriver
     await this.page.addInitScript(() => {
@@ -102,7 +91,7 @@ export class CopyCatService implements OnModuleDestroy {
 
     this.elementMap = {};
     const elements = await this.page.$$(
-      'a, button, input, textarea, select, [role=button], [onclick]',
+      'a, button, input, textarea, select, [role=button], [onclick], div[role="gridcell"],[role=textbox] ', 
     );
 
     const occupiedPositions = new Set();
