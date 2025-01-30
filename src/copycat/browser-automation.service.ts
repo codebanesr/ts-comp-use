@@ -200,8 +200,8 @@ export class BrowserAutomationService {
     const sourceLocator = page.locator(`xpath=${sourceXpath}`);
     const targetLocator = page.locator(`xpath=${targetXpath}`);
 
-    await sourceLocator.waitFor({ state: 'visible' });
-    await targetLocator.waitFor({ state: 'visible' });
+    await sourceLocator.waitFor({ state: 'visible', timeout: 2000 });
+    await targetLocator.waitFor({ state: 'visible', timeout: 2000 });
 
     // Use Playwright's built-in dragTo method
     await sourceLocator.dragTo(targetLocator, {

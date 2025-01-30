@@ -17,7 +17,7 @@ const client = new OpenAI({
 
 @Injectable()
 export class CopyCatService implements OnModuleDestroy {
-  private browser: BrowserContext | null = null;
+  private browser: Browser | null = null;
   private page: Page | null = null;
   private elementMap: { [key: number]: { xpath: string; text: string } } = {};
 
@@ -33,7 +33,7 @@ export class CopyCatService implements OnModuleDestroy {
   async initialize(): Promise<void> {
     if (this.isBrowserInitialized()) return;
 
-    this.browser = await chromium.launchPersistentContext('/Users/shanurrahman/Documents/spc/nodecomp/shanur', {
+    this.browser = await chromium.launch({
       headless: false,
       executablePath:
         '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -91,7 +91,30 @@ export class CopyCatService implements OnModuleDestroy {
 
     this.elementMap = {};
     const elements = await this.page.$$(
-      'a, button, input, textarea, select, [role=button], [onclick], div[role="gridcell"],[role=textbox] ', 
+      `
+        a[href]:not([disabled]):not([aria-hidden="true"]),
+        button:not([disabled]):not([aria-hidden="true"]),
+        input:not([disabled]):not([type="hidden"]):not([aria-hidden="true"]),
+        textarea:not([disabled]):not([aria-hidden="true"]),
+        select:not([disabled]):not([aria-hidden="true"]),
+        [role="button"]:not([disabled]):not([aria-hidden="true"]),
+        [role="link"]:not([disabled]):not([aria-hidden="true"]),
+        [role="menuitem"]:not([disabled]):not([aria-hidden="true"]),
+        [role="option"]:not([disabled]):not([aria-hidden="true"]),
+        [role="switch"]:not([disabled]):not([aria-hidden="true"]),
+        [role="tab"]:not([disabled]):not([aria-hidden="true"]),
+        [role="checkbox"]:not([disabled]):not([aria-hidden="true"]),
+        [role="radio"]:not([disabled]):not([aria-hidden="true"]),
+        [role="combobox"]:not([disabled]):not([aria-hidden="true"]),
+        [role="textbox"]:not([disabled]):not([aria-hidden="true"]),
+        [role="searchbox"]:not([disabled]):not([aria-hidden="true"]),
+        [role="spinbutton"]:not([disabled]):not([aria-hidden="true"]),
+        [role="slider"]:not([disabled]):not([aria-hidden="true"]),
+        [onclick]:not([disabled]):not([aria-hidden="true"]),
+        [tabindex]:not([tabindex="-1"]):not([disabled]):not([aria-hidden="true"]),
+        label[for]:not([disabled]):not([aria-hidden="true"]),
+        [contenteditable="true"]:not([disabled]):not([aria-hidden="true"])
+      `.trim()
     );
 
     const occupiedPositions = new Set();
@@ -232,7 +255,7 @@ export class CopyCatService implements OnModuleDestroy {
     return [
       {
         type: 'text',
-        text: `You are a browser automation assistant using Playwright. Analyze the screenshot and follow these rules:
+        text: `You are a browser automation assistant using Playwright. Analyze the screenshot and the Original Instruction and follow these rules:
 
   Rules:
   1. Examine the screenshot with numbered interactive elements
@@ -305,6 +328,8 @@ export class CopyCatService implements OnModuleDestroy {
     while (true) {
       await this.markClickableElements();
       const screenshot = await this.captureScreenshot();
+
+      await this.removeMarkings();
       let messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
         {
           role: 'user',
@@ -315,13 +340,10 @@ export class CopyCatService implements OnModuleDestroy {
         },
       ];
 
-
       const result = await client.chat.completions.create({
         model: 'Qwen/Qwen2-VL-72B-Instruct',
         messages: messages,
       });
-
-      await this.removeMarkings();
 
       const assistantResponse = result.choices[0].message.content;
 
@@ -338,15 +360,12 @@ export class CopyCatService implements OnModuleDestroy {
 
         if (status === 'finish') {
           console.log('Automation completed successfully');
-
-          // verify the result, then either exit or continue;
-          // break;
+          break;
         }
       } catch (error) {
         console.error("We don't care, pass on to the next iteration ...");
       }
 
-      await sleep(1000);
     }
   }
 
