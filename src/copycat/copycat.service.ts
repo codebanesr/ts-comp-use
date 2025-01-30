@@ -37,9 +37,32 @@ export class CopyCatService implements OnModuleDestroy {
       headless: false,
       executablePath:
         '/Users/shanurrahman/Library/Caches/ms-playwright/chromium-1148/chrome-mac/Chromium.app/Contents/MacOS/Chromium',
+      args: [
+        '--disable-blink-features=AutomationControlled',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--window-size=1920,1080',
+      ],
     });
 
-    this.page = await this.browser.newPage();
+    const context = await this.browser.newContext({
+      viewport: { width: 1920, height: 1080 },
+      userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      permissions: ['geolocation'],
+      colorScheme: 'dark',
+      locale: 'en-US',
+      deviceScaleFactor: 1,
+      hasTouch: false,
+    });
+
+    this.page = await context.newPage();
+
+    // Override navigator.webdriver
+    await this.page.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+      });
+    });
   }
 
   async initWebsiteStart(url: string): Promise<void> {
@@ -213,69 +236,75 @@ export class CopyCatService implements OnModuleDestroy {
     screenshotUrl: string,
     originalPrompt: string,
   ): ChatCompletionUserMessageParam['content'] {
+    // Detect platform architecture
+    const os = process.platform;
+    const isMac = os === 'darwin';
+
     return [
       {
         type: 'text',
         text: `You are a browser automation assistant using Playwright. Analyze the screenshot and follow these rules:
 
-    Rules:
-    1. Examine the screenshot with numbered interactive elements
-    2. Generate actions in JSON format with:
-       - "actions": Array of Playwright commands (use only allowed actions)
-       - "summary": Concise step description (1-2 sentences)
-       - "status": "continue" or "finish"
+  Rules:
+  1. Examine the screenshot with numbered interactive elements
+  2. Generate actions in JSON format with:
+     - "actions": Array of Playwright commands (use only allowed actions)
+     - "summary": Concise step description (1-2 sentences)
+     - "status": "continue" or "finish"
 
-    Allowed Actions (Playwright-specific):
-    - click(index): Left-click element
-    - double_click(index): Double left-click
-    - right_click(index): Right-click context menu
-    - type(index, value): Input text (supports Unicode)
-    - select(index, value): Select dropdown option
-    - hover(index): Mouse hover
-    - wait(value): Pause in seconds
-    - navigate(value): Load URL
-    - scroll(value): Scroll ('up', 'down', or pixels)
-    - press_key(value): Keyboard action (single key or modifier combo)
-    - drag(index, targetIndex): Drag and drop
+  Allowed Actions (Playwright-specific):
+  - click(index): Left-click element
+  - double_click(index): Double left-click
+  - right_click(index): Right-click context menu
+  - type(index, value): Input text (supports Unicode)
+  - select(index, value): Select dropdown option
+  - hover(index): Mouse hover
+  - wait(value): Pause in seconds
+  - navigate(value): Load URL
+  - scroll(value): Scroll ('up', 'down', or pixels)
+  - press_key(value): Keyboard action (single key or modifier combo)
+  - drag(index, targetIndex): Drag and drop
 
-    3. Only output the actions you can take on this screenshot. We will ask you for more instructions once we navigate to the next page.
+  3. Only output the actions you can take on this screenshot. We will ask you for more instructions once we navigate to the next page.
 
-    Keyboard Specifics:
-    - Use Playwright key names: 'ArrowUp', 'Enter', 'Control', etc.
-    - Combine modifiers with '+': 'Control+V', 'Shift+ArrowDown'
-    - Common combinations:
-      - Copy: 'Control+C'
-      - Paste: 'Control+V'
-      - Select All: 'Control+A'
-      - Tab Navigation: 'Control+Tab'
-      - Refresh: 'F5'
+  Keyboard Specifics:
+  - Use Playwright key names: 'ArrowUp', 'Enter', 'Control', etc.
+  - Combine modifiers with '+': 'Control+V', 'Shift+ArrowDown'
+  - Common combinations:
+    - Copy: '${isMac ? 'Command' : 'Control'}+C'
+    - Paste: '${isMac ? 'Command' : 'Control'}+V'
+    - Select All: '${isMac ? 'Command' : 'Control'}+A'
+    - Tab Navigation: 'Control+Tab'
+    - Refresh: 'F5'
 
-    Response Requirements:
-    1. Specify element indexes from screenshot
-    2. For text input, include exact values
-    3. Chain related actions (click -> type -> press_key)
-    4. Use 'wait' strategically between actions
+  Response Requirements:
+  1. Specify element indexes from screenshot
+  2. For text input, include exact values
+  3. Chain related actions (click -> type -> press_key)
+  4. Use 'wait' strategically between actions
 
-    Example Workflow:
-    User: "Search for playwright docs and open first result"
-    Response:
-    {
-      "actions": [
-        { "index": 1, "action": "click", "reason": "Focus search field" },
-        { "index": 1, "action": "type", "value": "playwright docs", "reason": "Enter query" },
-        { "action": "press_key", "value": "Enter", "reason": "Submit search" },
-        { "index": 5, "action": "click", "reason": "Open first result" }
-      ],
-      "summary": "Searched for playwright docs and opened first result",
-      "status": "finish"
-    }
+  Example Workflow:
+  User: "Search for playwright docs and open first result"
+  Response:
+  {
+    "actions": [
+      { "index": 1, "action": "click", "reason": "Focus search field" },
+      { "index": 1, "action": "type", "value": "playwright docs", "reason": "Enter query" },
+      { "action": "press_key", "value": "Enter", "reason": "Submit search" },
+      { "index": 5, "action": "click", "reason": "Open first result" }
+    ],
+    "summary": "Searched for playwright docs and opened first result",
+    "status": "finish"
+  }
 
-    Current Context:
-    ${conversationSummary}
+  Current Platform: ${os === 'darwin' ? 'macOS' : 'Linux'}
 
-    User Instruction:
-    ${originalPrompt}
-    `,
+  Current Context:
+  ${conversationSummary}
+
+  User Instruction:
+  ${originalPrompt}
+  `,
       },
       {
         type: 'image_url',

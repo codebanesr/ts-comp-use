@@ -231,7 +231,7 @@ export class BrowserAutomationService {
     if (!element) throw new Error(`Element not found: ${xpath}`);
     return element;
   }
-  
+
   async verifyActionResult(
     page: Page,
     action: AutomationAction,
