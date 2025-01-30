@@ -345,7 +345,7 @@ COMMAND SYNTAX:
 3. press_key("<keys>")         - Keyboard actions (${modifierKey}+A, Enter, F5)
 4. select(<index>, "text") - Dropdowns, radio buttons
 5. navigate("<url>")       - Full URL required
-6. wait(<ms>)              - 1000-5000ms pauses
+6. wait(<seconds>)              - 1-5s pauses
 7. scroll("<direction>")   - up|down|top|bottom
 
 STRICT RULES:
@@ -468,6 +468,7 @@ RESPOND ONLY WITH VALID JSON IN <json> TAGS.`,
       return JSON.parse(content.trim());
     } catch (e) {
       console.error('All JSON extraction attempts failed:', e);
+      console.log(JSON.stringify(content, null, 2));
       return null;
     }
   }
@@ -505,19 +506,19 @@ RESPOND ONLY WITH VALID JSON IN <json> TAGS.`,
 
         console.log(JSON.stringify(response, null, 2));
 
-        const actions: AutomationAction[] = response.actions || [];
+        const actions: AutomationAction[] = response.actions || response;
         const status = response.status || 'continue';
 
         if (actions.length > 0) {
           messages.push({
             role: 'assistant',
-            content: "Predicted actions: \n\n" + JSON.stringify(actions)
+            content: JSON.stringify(actions)
           });
 
           const response = await this.executeActions(actions);
           messages.push({
             role: 'user',
-            content: "Action summary: \n\n" + response
+            content: response
           });
 
           await this.page?.waitForLoadState('networkidle');
@@ -528,13 +529,15 @@ RESPOND ONLY WITH VALID JSON IN <json> TAGS.`,
           if (msg.role === 'user') {
             const content = msg.content;
             if (Array.isArray(content)) {
-              const hasImage = content.some(part => part.type === 'image_url');
-              if (hasImage) {
-                return {
-                  ...msg,
-                  content: 'Screenshot Redacted ...'
-                };
-              }
+              return {
+                ...msg,
+                content: content.map(part => {
+                  if (part.type === 'image_url') {
+                    return null
+                  }
+                  return part; // Preserve other content types
+                }).filter(x => x !== null)
+              };
             }
           }
           return msg;
@@ -551,7 +554,7 @@ RESPOND ONLY WITH VALID JSON IN <json> TAGS.`,
           content: [
             {
               "type": "text",
-              "text": "Here is the most recent screenshot, predict the actions to be taken within <json> tags"
+              "text": `Here is the most recent screenshot, predict the actions to be taken within <json>{"actions": [{"action": "click", "index": 5, "reason": "Select quantity field"}], "status": "continue", "summary": "some summary here..."}</json> tags`
             },
             {
               "image_url": {
@@ -572,47 +575,47 @@ RESPOND ONLY WITH VALID JSON IN <json> TAGS.`,
   }
 
   async executeActions(actions: AutomationAction[]): Promise<string> {
-    const actionResults: ActionResult[] = [];
-
-    for await (const action of actions) {
+    const actionResults = await actions.reduce(async (promiseAcc, action) => {
+      // Wait for the previous actions to complete
+      const acc = await promiseAcc;
+      
       try {
         await this.browserAutomationService.executeAction(
           this.page,
           action,
           this.elementMap
         );
-
+  
         await sleep(1000); // Wait for the page to load
-        // Assuming executeAction returns a result object
-        actionResults.push({
+        
+        return [...acc, {
           actionType: action.action,
           index: action.index,
           reason: action.reason,
           succeeded: true,
           details: { value: action.value || '' }
-        });
+        }];
       } catch (error) {
         this.logger.error(
           `Failed to execute action ${action.action} on element ${action.index}`,
           error
         );
-
-        // Collect failure information
-        actionResults.push({
+  
+        return [...acc, {
           actionType: action.action,
           index: action.index,
           reason: action.reason,
           succeeded: false,
           error: error.toString()
-        });
+        }];
       }
-    }
-
+    }, Promise.resolve([] as ActionResult[]));
+  
     // Generate the summary of all actions
     const summary = this.generateSummary(actionResults);
     this.logger.debug('Action Execution Summary:');
     this.logger.debug(summary);
-
+  
     return summary;
   }
 
