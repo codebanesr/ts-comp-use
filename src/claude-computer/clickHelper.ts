@@ -1,4 +1,4 @@
-const clickHelper = {
+export const clickHelper = {
   generateCliclickArgs(actions) {
     const keyMapping = {
       Return: 'return',
@@ -13,8 +13,10 @@ const clickHelper = {
     return actions.map((actionObj) => {
       const { action, text } = actionObj;
 
-      if (action === "key") {
-        const keys = text.split('+').map((key) => keyMapping[key] || key.toLowerCase());
+      if (action === 'key') {
+        const keys = text
+          .split('+')
+          .map((key) => keyMapping[key] || key.toLowerCase());
         if (keys.length > 1) {
           return {
             action: 'keyCombo',
@@ -31,7 +33,7 @@ const clickHelper = {
             },
           };
         }
-      } else if (action === "type") {
+      } else if (action === 'type') {
         return {
           action: 'typeText',
           args: {
@@ -42,9 +44,7 @@ const clickHelper = {
         throw new Error(`Unsupported action: ${action}`);
       }
     });
-  }
-  ,
-
+  },
   generateCliclickCommand(action, args) {
     switch (action) {
       case 'keyPress':
@@ -55,7 +55,10 @@ const clickHelper = {
         // Simulates pressing and releasing key combinations (e.g., Command+Space)
         const modifierKeys = args.modifiers.map((key) => `kd:${key}`).join(' ');
         const mainKey = `kp:${args.mainKey}`;
-        const releaseModifiers = args.modifiers.reverse().map((key) => `ku:${key}`).join(' ');
+        const releaseModifiers = args.modifiers
+          .reverse()
+          .map((key) => `ku:${key}`)
+          .join(' ');
         return `cliclick ${modifierKeys} ${mainKey} ${releaseModifiers}`;
 
       case 'click':
@@ -109,5 +112,5 @@ const clickHelper = {
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
-  }
-}
+  },
+};

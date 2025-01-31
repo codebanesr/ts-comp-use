@@ -169,6 +169,7 @@ export class BrowserService {
             try {
               await this.page.keyboard.press(text);
             } catch (error) {
+              console.error(error);
               console.log({ 'could not execute, unmapped key': text });
             }
           }
@@ -187,6 +188,7 @@ export class BrowserService {
         case 'left_click_drag':
           if (!coordinates || coordinates.length < 2)
             throw new Error('Coordinates required for left_click_drag');
+          // eslint-disable-next-line no-case-declarations
           const [endX, endY] = coordinates;
           await this.page.mouse.down({ button: 'left' });
           await this.page.mouse.move(endX, endY);
@@ -216,6 +218,7 @@ export class BrowserService {
           break;
 
         case 'screenshot':
+          // eslint-disable-next-line no-case-declarations
           const screenshotName = this.generateUniqueFileName();
           await this.page.screenshot({
             path: screenshotName,
@@ -336,7 +339,7 @@ export class BrowserService {
           if (tool.name === 'human') {
             // here we need to show an input box where user can enter the details. Then that input has to be inputted into
             const humanResponse = await this.humanToolService.displayInputBox(
-              // @ts-expect-error
+              // @ts-expect-error something
               tool.input.prompt,
               this.page,
             );
@@ -361,11 +364,11 @@ export class BrowserService {
           // check tool.name == 'computer' then use this function
           else if (tool.name === 'computer') {
             const result = await this.executeAction(
-              // @ts-expect-error
+              // @ts-expect-error something
               tool.input.action,
-              // @ts-expect-error
+              // @ts-expect-error something
               tool.input.text,
-              // @ts-expect-error
+              // @ts-expect-error something
               tool.input.coordinate,
             );
 

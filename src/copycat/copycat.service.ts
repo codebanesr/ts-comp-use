@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { chromium, Browser, Page } from 'playwright';
 import OpenAI from 'openai';
 import * as path from 'path';
-import * as fs from 'fs';
+// import * as fs from 'fs';
 import {
   AutomationAction,
   BrowserAutomationService,
@@ -33,7 +33,7 @@ export class CopyCatService implements OnModuleDestroy {
   private readonly logger = new Logger(CopyCatService.name);
   constructor(
     private readonly browserAutomationService: BrowserAutomationService,
-  ) { }
+  ) {}
 
   isBrowserInitialized(): boolean {
     return this.browser !== null && this.page !== null;
@@ -45,7 +45,8 @@ export class CopyCatService implements OnModuleDestroy {
     // Launch the browser with the desired configuration
     this.browser = await chromium.launch({
       headless: false,
-      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      executablePath:
+        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
       args: [
         '--disable-blink-features=AutomationControlled',
         '--disable-features=IsolateOrigins,site-per-process',
@@ -57,7 +58,8 @@ export class CopyCatService implements OnModuleDestroy {
     // Create a new browser context
     const context = await this.browser.newContext({
       viewport: { width: 1920, height: 1080 },
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       permissions: ['geolocation'],
       colorScheme: 'dark',
       locale: 'en-US',
@@ -110,9 +112,11 @@ export class CopyCatService implements OnModuleDestroy {
 
     // await this.page.setViewportSize({ width: 1920, height: 1080 });
     await this.page.goto(url);
-    await this.page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {
-      console.log("Timeout waiting for network idle @ setupPage")
-    });
+    await this.page
+      .waitForLoadState('networkidle', { timeout: 3000 })
+      .catch(() => {
+        console.log('Timeout waiting for network idle @ setupPage');
+      });
 
     await this.page.evaluate(() => {
       document
@@ -164,8 +168,10 @@ export class CopyCatService implements OnModuleDestroy {
         '.clickable',
         '.interactive',
         '.button',
-        '.btn'
-      ].join(', ').trim()
+        '.btn',
+      ]
+        .join(', ')
+        .trim(),
     );
 
     const occupiedPositions = new Set();
@@ -217,7 +223,7 @@ export class CopyCatService implements OnModuleDestroy {
             if (
               sibling.nodeType === 1 &&
               (sibling as Element).tagName.toLowerCase() ===
-              element.tagName.toLowerCase()
+                element.tagName.toLowerCase()
             ) {
               pos++;
             }
@@ -298,7 +304,7 @@ export class CopyCatService implements OnModuleDestroy {
   }
 
   async captureScreenshot(): Promise<string> {
-    console.log("taking a screenshot")
+    console.log('taking a screenshot');
     if (!this.page) throw new Error('Page is not initialized.');
     // Define the folder where screenshots will be saved
     const screenshotFolder = 'screenshots';
@@ -306,7 +312,10 @@ export class CopyCatService implements OnModuleDestroy {
     // Capture the screenshot as a Buffer
     const buffer = await this.page.screenshot({
       fullPage: false,
-      path: path.join(screenshotFolder, `screenshot_${new Date().getTime()}.png`),
+      path: path.join(
+        screenshotFolder,
+        `screenshot_${new Date().getTime()}.png`,
+      ),
       scale: 'css',
     });
 
@@ -424,9 +433,9 @@ RESPOND ONLY WITH VALID JSON IN <json> TAGS.`,
       },
       {
         type: 'image_url',
-        image_url: { 
+        image_url: {
           url: screenshotUrl,
-          detail: "high"
+          detail: 'high',
         },
       },
     ];
@@ -435,7 +444,7 @@ RESPOND ONLY WITH VALID JSON IN <json> TAGS.`,
   private extractJSON(content: string): any | null {
     // Try structured formats first
     const structuredMatch = content.match(
-      /(?:<json>|```json)(.*?)(?:<\/json>|```)/s
+      /(?:<json>|```json)(.*?)(?:<\/json>|```)/s,
     );
 
     if (structuredMatch) {
@@ -447,9 +456,7 @@ RESPOND ONLY WITH VALID JSON IN <json> TAGS.`,
     }
 
     // Fallback: Attempt to find first valid JSON in content
-    const jsonCandidates = content.match(
-      /{(?:[^{}]|{(?:[^{}]|)*})*}/gs
-    ) || [];
+    const jsonCandidates = content.match(/{(?:[^{}]|{(?:[^{}]|)*})*}/gs) || [];
 
     for (const candidate of jsonCandidates) {
       try {
@@ -481,10 +488,7 @@ RESPOND ONLY WITH VALID JSON IN <json> TAGS.`,
     let messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
       {
         role: 'user',
-        content: this.createSystemMessageContent(
-          screenshot,
-          message,
-        ),
+        content: this.createSystemMessageContent(screenshot, message),
       },
     ];
 
@@ -500,7 +504,7 @@ RESPOND ONLY WITH VALID JSON IN <json> TAGS.`,
         const response = this.extractJSON(assistantResponse);
 
         if (response === null) {
-          console.error("Invalid JSON:", assistantResponse);
+          console.error('Invalid JSON:', assistantResponse);
           continue;
         }
 
@@ -512,31 +516,33 @@ RESPOND ONLY WITH VALID JSON IN <json> TAGS.`,
         if (actions.length > 0) {
           messages.push({
             role: 'assistant',
-            content: JSON.stringify(actions)
+            content: JSON.stringify(actions),
           });
 
           const response = await this.executeActions(actions);
           messages.push({
             role: 'user',
-            content: response
+            content: response,
           });
 
           await this.page?.waitForLoadState('networkidle');
         }
 
         // Process existing messages to replace images with text
-        messages = messages.map(msg => {
+        messages = messages.map((msg) => {
           if (msg.role === 'user') {
             const content = msg.content;
             if (Array.isArray(content)) {
               return {
                 ...msg,
-                content: content.map(part => {
-                  if (part.type === 'image_url') {
-                    return null
-                  }
-                  return part; // Preserve other content types
-                }).filter(x => x !== null)
+                content: content
+                  .map((part) => {
+                    if (part.type === 'image_url') {
+                      return null;
+                    }
+                    return part; // Preserve other content types
+                  })
+                  .filter((x) => x !== null),
               };
             }
           }
@@ -553,80 +559,92 @@ RESPOND ONLY WITH VALID JSON IN <json> TAGS.`,
           role: 'user',
           content: [
             {
-              "type": "text",
-              "text": `Here is the most recent screenshot, predict the actions to be taken within <json>{"actions": [{"action": "click", "index": 5, "reason": "Select quantity field"}], "status": "continue", "summary": "some summary here..."}</json> tags`
+              type: 'text',
+              text: `Here is the most recent screenshot, predict the actions to be taken within <json>{"actions": [{"action": "click", "index": 5, "reason": "Select quantity field"}], "status": "continue", "summary": "some summary here..."}</json> tags`,
             },
             {
-              "image_url": {
-                "url": newScreenshot,
+              image_url: {
+                url: newScreenshot,
               },
-              "type": "image_url",
-            }]
+              type: 'image_url',
+            },
+          ],
         });
 
         if (status === 'finish') {
           return assistantResponse;
         }
       } catch (error) {
-        console.error(error)
+        console.error(error);
         console.error("We don't care, pass on to the next iteration ...");
       }
     }
   }
 
   async executeActions(actions: AutomationAction[]): Promise<string> {
-    const actionResults = await actions.reduce(async (promiseAcc, action) => {
-      // Wait for the previous actions to complete
-      const acc = await promiseAcc;
-      
-      try {
-        await this.browserAutomationService.executeAction(
-          this.page,
-          action,
-          this.elementMap
-        );
-  
-        await sleep(1000); // Wait for the page to load
-        
-        return [...acc, {
-          actionType: action.action,
-          index: action.index,
-          reason: action.reason,
-          succeeded: true,
-          details: { value: action.value || '' }
-        }];
-      } catch (error) {
-        this.logger.error(
-          `Failed to execute action ${action.action} on element ${action.index}`,
-          error
-        );
-  
-        return [...acc, {
-          actionType: action.action,
-          index: action.index,
-          reason: action.reason,
-          succeeded: false,
-          error: error.toString()
-        }];
-      }
-    }, Promise.resolve([] as ActionResult[]));
-  
+    const actionResults = await actions.reduce(
+      async (promiseAcc, action) => {
+        // Wait for the previous actions to complete
+        const acc = await promiseAcc;
+
+        try {
+          await this.browserAutomationService.executeAction(
+            this.page,
+            action,
+            this.elementMap,
+          );
+
+          await sleep(1000); // Wait for the page to load
+
+          return [
+            ...acc,
+            {
+              actionType: action.action,
+              index: action.index,
+              reason: action.reason,
+              succeeded: true,
+              details: { value: action.value || '' },
+            },
+          ];
+        } catch (error) {
+          this.logger.error(
+            `Failed to execute action ${action.action} on element ${action.index}`,
+            error,
+          );
+
+          return [
+            ...acc,
+            {
+              actionType: action.action,
+              index: action.index,
+              reason: action.reason,
+              succeeded: false,
+              error: error.toString(),
+            },
+          ];
+        }
+      },
+      Promise.resolve([] as ActionResult[]),
+    );
+
     // Generate the summary of all actions
     const summary = this.generateSummary(actionResults);
     this.logger.debug('Action Execution Summary:');
     this.logger.debug(summary);
-  
+
     return summary;
   }
 
   generateSummary(actionResults: ActionResult[]): string {
-    return actionResults.map(result => {
-      const base = `Action: ${result.actionType}, Index: ${result.index || 'N/A'}, Reason: ${result.reason}`;
-      if (result.succeeded) {
-        return `${base} - Succeeded. Details: ${result.details?.value || 'N/A'}`;
-      } else {
-        return `${base} - Failed. Error: ${result.error || 'Unknown error'}`;
-      }
-    }).join('\n');
+    return actionResults
+      .map((result) => {
+        const base = `Action: ${result.actionType}, Index: ${result.index || 'N/A'}, Reason: ${result.reason}`;
+        if (result.succeeded) {
+          return `${base} - Succeeded. Details: ${result.details?.value || 'N/A'}`;
+        } else {
+          return `${base} - Failed. Error: ${result.error || 'Unknown error'}`;
+        }
+      })
+      .join('\n');
   }
 }

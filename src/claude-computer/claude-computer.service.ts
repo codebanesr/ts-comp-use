@@ -10,7 +10,6 @@ import Anthropic from '@anthropic-ai/sdk';
 import { MessageParam } from '@anthropic-ai/sdk/resources';
 import { sleep } from '@anthropic-ai/sdk/core';
 import { keys, modifierKeys } from './mac-utils';
-import { join } from 'path';
 
 // Define return type interfaces
 interface SuccessResult {
@@ -31,7 +30,6 @@ interface CursorPositionResult {
 // Union type for all possible return types
 type ActionResult = SuccessResult | ScreenshotResult | CursorPositionResult;
 
-
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
@@ -51,8 +49,6 @@ const SYSTEM_PROMPT_LINUX = `<SYSTEM_CAPABILITY>
 * When using Firefox, if a startup wizard appears, IGNORE IT.  Do not even click "skip this step".  Instead, click on the address bar where it says "Search or enter address", and enter the appropriate search term or URL there.
 * If the item you are looking at is a pdf, if after taking a single screenshot of the pdf it seems that you want to read the entire document instead of trying to continue to read the pdf from your screenshots + navigation, determine the URL, use curl to download the pdf, install and use pdftotext to convert it to a text file, and then read that text file directly with your StrReplaceEditTool.
 </IMPORTANT>`;
-
-
 
 const SYSTEM_PROMPT_MAC = `<SYSTEM_CAPABILITY>
 * You are utilizing a macOS virtual machine using {platform.machine()} architecture with internet access.
@@ -198,7 +194,7 @@ export class ClaudeComputerService {
       // Helper function to execute cliclick commands
       const runCliclick = (cmd: string) => {
         console.log(`Running command: ${cmd}`);
-        execSync(`cliclick ${cmd}`)
+        execSync(`cliclick ${cmd}`);
       };
 
       switch (action) {
@@ -213,22 +209,22 @@ export class ClaudeComputerService {
           console.log(`Pressing key: ${text}`);
           // Convert common key names to cliclick format
           const keyMap: { [key: string]: string } = {
-            'return': 'kp:enter kp:return',
-            'tab': 'kp:tab',
-            'space': 'kp:space',
-            'left': 'kp:arrow-left',
-            'right': 'kp:arrow-right',
-            'up': 'kp:arrow-up',
-            'down': 'kp:arrow-down',
-            'escape': 'kp:esc',
-            'delete': 'kp:delete',
-            'backspace': 'kp:backspace',
-            'home': 'kp:home',
-            'end': 'kp:end',
-            'page_up': 'kp:page-up',
-            'page_down': 'kp:page-down',
-            'cmd+space': "kd:cmd kp:space ku:cmd",
-            'cmd+w': 'kd:cmd t:w'
+            return: 'kp:enter kp:return',
+            tab: 'kp:tab',
+            space: 'kp:space',
+            left: 'kp:arrow-left',
+            right: 'kp:arrow-right',
+            up: 'kp:arrow-up',
+            down: 'kp:arrow-down',
+            escape: 'kp:esc',
+            delete: 'kp:delete',
+            backspace: 'kp:backspace',
+            home: 'kp:home',
+            end: 'kp:end',
+            page_up: 'kp:page-up',
+            page_down: 'kp:page-down',
+            'cmd+space': 'kd:cmd kp:space ku:cmd',
+            'cmd+w': 'kd:cmd t:w',
           };
 
           // cliclick kd:cmd kp:space ku:cmd
@@ -293,7 +289,7 @@ export class ClaudeComputerService {
           const screenshotName = generateUniqueFileName(); // Ensure it generates a valid file name
           try {
             // Use screencapture command for macOS
-            c = `screencapture -x ${screenshotName}`
+            c = `screencapture -x ${screenshotName}`;
             execSync(c);
           } catch (e) {
             console.error('Failed to take screenshot:', e.message);
@@ -318,14 +314,14 @@ export class ClaudeComputerService {
   }
 
   // Helper method to get current cursor position
-  private async getCurrentPosition(): Promise<{ x: number, y: number }> {
+  private async getCurrentPosition(): Promise<{ x: number; y: number }> {
     try {
       const output = execSync('cliclick p').toString();
       const match = output.match(/(\d+),(\d+)/);
       if (!match) throw new Error('Failed to get cursor position');
       return {
         x: parseInt(match[1], 10),
-        y: parseInt(match[2], 10)
+        y: parseInt(match[2], 10),
       };
     } catch (error) {
       console.error('Error getting cursor position:', error);
@@ -333,13 +329,11 @@ export class ClaudeComputerService {
     }
   }
 
-
-
   async interactWithClaude(userPrompt: string) {
     console.log('Starting interaction with Claude');
     const isMac = process.env.PLATFORM == 'MAC';
-    console.log({ isMac })
-    let messages: MessageParam[] = [
+    console.log({ isMac });
+    const messages: MessageParam[] = [
       {
         content: [
           {
@@ -414,31 +408,30 @@ export class ClaudeComputerService {
           });
 
           // Execute action
-          let result: ActionResult
+          let result: ActionResult;
           if (isMac) {
             result = await this.executeActionMac(
-              // @ts-expect-error
+              // @ts-expect-error some error may be thrown
               tool.input.action,
 
-              // @ts-expect-error
+              // @ts-expect-error some error may be thrown
               tool.input.text,
 
-              // @ts-expect-error
+              // @ts-expect-error some error may be thrown
               tool.input.coordinate,
             );
           } else {
             result = await this.executeActionLinux(
-              // @ts-expect-error
+              // @ts-expect-error some error may be thrown
               tool.input.action,
 
-              // @ts-expect-error
+              // @ts-expect-error some error may be thrown
               tool.input.text,
 
-              // @ts-expect-error
+              // @ts-expect-error some error may be thrown
               tool.input.coordinate,
             );
           }
-
 
           // Add tool result message
           if (result.screenshot_path) {

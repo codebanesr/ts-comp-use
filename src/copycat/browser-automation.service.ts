@@ -38,29 +38,36 @@ export class BrowserAutomationService {
   private async handleClick(page: Page, xpath: string): Promise<void> {
     try {
       const element = await this.getVisibleElement(page, xpath);
-      
+
       // Optional: Check if the element is in viewport
       const isInViewport = await element.evaluate((el) => {
         const rect = el.getBoundingClientRect();
         return (
           rect.top >= 0 &&
           rect.left >= 0 &&
-          rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
-          rect.right <= (window.innerWidth || document.documentElement.clientWidth)
+          rect.bottom <=
+            (window.innerHeight || document.documentElement.clientHeight) &&
+          rect.right <=
+            (window.innerWidth || document.documentElement.clientWidth)
         );
       });
-  
+
       if (!isInViewport) {
         await element.scrollIntoViewIfNeeded();
       }
-  
+
       await element.click({ force: true });
-      
+
       // Wait for network idle if necessary
-      await page.waitForLoadState('networkidle', {timeout: 3000}).catch(() => { /* Ignore timeout if no navigation occurs */ });
-  
+      await page
+        .waitForLoadState('networkidle', { timeout: 3000 })
+        .catch(() => {
+          /* Ignore timeout if no navigation occurs */
+        });
     } catch (error) {
-      console.error(`Error clicking element with xpath ${xpath}: ${error.message}`);
+      console.error(
+        `Error clicking element with xpath ${xpath}: ${error.message}`,
+      );
       // You can add custom error handling here if needed
       return; // Continue execution after logging the error
     }
@@ -108,7 +115,7 @@ export class BrowserAutomationService {
   private async handleNavigate(page: Page, url?: string): Promise<void> {
     if (!url) throw new Error('URL required for navigate action');
     await page.goto(url);
-    await page.waitForLoadState('networkidle', {timeout: 3000}); // Wait for navigation to complete
+    await page.waitForLoadState('networkidle', { timeout: 3000 }); // Wait for navigation to complete
   }
 
   private async handleHover(page: Page, xpath: string): Promise<void> {
@@ -182,7 +189,7 @@ export class BrowserAutomationService {
         throw new Error(`Unsupported action: ${action.action}`);
     }
 
-    await page.waitForLoadState('networkidle', {timeout: 3000});
+    await page.waitForLoadState('networkidle', { timeout: 3000 });
   }
 
   private logActionExecution(
@@ -245,12 +252,12 @@ export class BrowserAutomationService {
     const viewportHeight = viewport.height || 0;
 
     if (scrollValue === 'up') {
-        await page.mouse.wheel(0, -viewportHeight * 0.8);
+      await page.mouse.wheel(0, -viewportHeight * 0.8);
     } else if (scrollValue === 'down') {
-        await page.mouse.wheel(0, viewportHeight * 0.8);
+      await page.mouse.wheel(0, viewportHeight * 0.8);
     } else {
-        const pixels = parseInt(scrollValue, 10);
-        await page.mouse.wheel(0, pixels);
+      const pixels = parseInt(scrollValue, 10);
+      await page.mouse.wheel(0, pixels);
     }
   }
 
@@ -289,7 +296,7 @@ export class BrowserAutomationService {
         // Other verification cases...
 
         default:
-          console.log({unverified: action.action})
+          console.log({ unverified: action.action });
           return true;
       }
     } catch (error) {
