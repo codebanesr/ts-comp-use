@@ -1,24 +1,55 @@
-http://localhost:6080/vnc.html?&resize=scale&autoconnect=1&view_only=1&reconnect=1&reconnect_delay=2000
+# NodeComp - AI-Powered Computer Interaction System
 
+NodeComp is a sophisticated system that combines multiple modules to enable AI-driven computer interaction, web automation, and virtual display management. The system provides a comprehensive solution for automated computer control and web interaction through various specialized modules.
 
-Install chromium:
-npx playwright install chromium
+## Core Modules
 
+### 1. [Computer Use Module](computer_use/DOCUMENTATION.md)
+Virtual display environment enabling browser-based access to X11 sessions. Features:
+- Virtual display server (Xvfb) for headless operation
+- Window management with Mutter
+- Panel system using Tint2
+- Remote access via X11VNC and noVNC
 
----
+### 2. [Browser Module](src/browser/DOCUMENTATION.md)
+Advanced web automation system with AI integration. Features:
+- Chromium-based automation using Playwright
+- Claude AI integration for intelligent decision making
+- Anti-detection mechanisms
+- Video recording capabilities
+- Interactive human input collection
 
-# Add a human layer tool, this should popup a message window for user to resume execution of the code. Use playwright alert for
-getting user input.
+### 3. [Claude Computer Module](src/claude-computer/DOCUMENTATION.md)
+Cross-platform system control interface for AI. Features:
+- Platform-specific system interaction (Linux/macOS)
+- Mouse and keyboard control
+- Screenshot capabilities
+- Window management
+- Real-time AI-driven system interaction
 
-```js
-if (tool.name === 'human') {
-  // call playwright with a popup that has a button that user can click to continue
-  const [popup] = await Promise.all([
-    this.page.waitForEvent('popup'), // Wait for the popup event
-    this.page.click('button#trigger-popup')  // Trigger the popup by clicking a button (adjust selector)
-  ]);
-}
-```
+### 4. [Copycat Module](src/copycat/DOCUMENTATION.md)
+Intelligent web automation with visual recognition. Features:
+- Visual element recognition and marking
+- AI-powered automation decisions
+- Complex browser interaction capabilities
+- Comprehensive element mapping
+- Robust error handling
+
+## System Architecture
+
+The system integrates these modules to provide:
+- Seamless AI-driven computer control
+- Web automation capabilities
+- Virtual display management
+- Cross-platform compatibility
+- Real-time interaction processing
+
+## Getting Started
+This project is built with [NestJS](https://nestjs.com/), a progressive Node.js framework for building efficient and scalable server-side applications.
+
+## License
+See [LICENSE](LICENSE) for details.
+
 
 
 
