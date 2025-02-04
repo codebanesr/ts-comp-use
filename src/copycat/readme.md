@@ -63,17 +63,3 @@ curl -X POST 'http://localhost:3000/copycat/run' \
 - Ensure that the JSON payloads match the expected structure as defined in the API documentation.
 
 These commands will allow you to interact with the web automation APIs and control browser-based tasks programmatically.
-
-
-
-----
-
-Reduce these timeouts pleaes
-[Nest] 17268  - 01/30/2025, 7:23:05 PM   ERROR [CopyCatService] Failed to execute action click on element 11
-[Nest] 17268  - 01/30/2025, 7:23:05 PM   ERROR [CopyCatService] TimeoutError: locator.waitFor: Timeout 30000ms exceeded.
-Call log:
-  - waiting for locator('xpath=/html/body/div[1]/div[3]/form[1]/div[1]/div[1]/div[1]/div[1]/div[3]/div[3]') to be visible
-    2 × waiting for navigation to finish...
-      - navigated to "https://www.google.com/search?q=chatgpt&sca_esv=95493269825c3f0f&source=hp&ei=DoSbZ-GdFumPvr0P8tSaoAs&iflsig=ACkRmUkAAAAAZ5uSHi1A0t-l7j3mvH866rz15-UrCsAJ&ved=0ahUKEwjh3JDey52LAxXph68BHXKqBrQQ4dUDCBA&…"
-
-If an element is not present in view, don't try to execute the action
