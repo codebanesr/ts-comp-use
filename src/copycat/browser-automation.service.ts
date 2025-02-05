@@ -289,6 +289,7 @@ export class BrowserAutomationService {
         // Other verification cases...
 
         default:
+          console.log({unverified: action.action})
           return true;
       }
     } catch (error) {

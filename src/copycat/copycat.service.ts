@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { chromium, Browser, Page, BrowserContext } from 'playwright';
+import { chromium, Browser, Page } from 'playwright';
 import OpenAI from 'openai';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -15,6 +15,15 @@ const client = new OpenAI({
   baseURL: 'https://api.together.xyz/v1',
 });
 
+interface ActionResult {
+  actionType: string;
+  index: number | undefined;
+  reason: string;
+  succeeded: boolean;
+  details?: { value: string };
+  error?: string;
+}
+
 @Injectable()
 export class CopyCatService implements OnModuleDestroy {
   private browser: Browser | null = null;
@@ -24,7 +33,7 @@ export class CopyCatService implements OnModuleDestroy {
   private readonly logger = new Logger(CopyCatService.name);
   constructor(
     private readonly browserAutomationService: BrowserAutomationService,
-  ) {}
+  ) { }
 
   isBrowserInitialized(): boolean {
     return this.browser !== null && this.page !== null;
@@ -35,25 +44,25 @@ export class CopyCatService implements OnModuleDestroy {
 
     // Launch the browser with the desired configuration
     this.browser = await chromium.launch({
-        headless: false,
-        executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-        args: [
-            '--disable-blink-features=AutomationControlled',
-            '--disable-features=IsolateOrigins,site-per-process',
-            '--window-size=1920,1080', // Initial window size
-            '--start-maximized', // Start the browser maximized
-        ],
+      headless: false,
+      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      args: [
+        '--disable-blink-features=AutomationControlled',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--window-size=1920,1080', // Initial window size
+        '--start-maximized', // Start the browser maximized
+      ],
     });
 
     // Create a new browser context
     const context = await this.browser.newContext({
-        viewport: { width: 1920, height: 1080 },
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        permissions: ['geolocation'],
-        colorScheme: 'dark',
-        locale: 'en-US',
-        deviceScaleFactor: 1,
-        hasTouch: false,
+      viewport: { width: 1920, height: 1080 },
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      permissions: ['geolocation'],
+      colorScheme: 'dark',
+      locale: 'en-US',
+      deviceScaleFactor: 1,
+      hasTouch: false,
     });
 
     // Create a new page
@@ -61,20 +70,20 @@ export class CopyCatService implements OnModuleDestroy {
 
     // Override navigator.webdriver
     await this.page.addInitScript(() => {
-        Object.defineProperty(navigator, 'webdriver', {
-            get: () => undefined,
-        });
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+      });
     });
 
     // Make the browser go full screen
     await this.page.evaluate(() => {
-        // Use the Fullscreen API to request full screen
-        if (document.documentElement.requestFullscreen) {
-            document.documentElement.requestFullscreen();
-        } else if ((document.documentElement as any).webkitRequestFullscreen) {
-            // For older versions of Chrome/Safari
-            (document.documentElement as any).webkitRequestFullscreen();
-        }
+      // Use the Fullscreen API to request full screen
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen();
+      } else if ((document.documentElement as any).webkitRequestFullscreen) {
+        // For older versions of Chrome/Safari
+        (document.documentElement as any).webkitRequestFullscreen();
+      }
     });
   }
 
@@ -101,7 +110,7 @@ export class CopyCatService implements OnModuleDestroy {
 
     // await this.page.setViewportSize({ width: 1920, height: 1080 });
     await this.page.goto(url);
-    await this.page.waitForLoadState('networkidle', {timeout: 3000}).catch(() => { 
+    await this.page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {
       console.log("Timeout waiting for network idle @ setupPage")
     });
 
@@ -116,7 +125,6 @@ export class CopyCatService implements OnModuleDestroy {
     if (!this.page) return;
     this.elementMap = {};
 
-    await sleep(1000); // Wait for the page to load
     const elements = await this.page.$$(
       [
         // Standard form elements
@@ -124,7 +132,7 @@ export class CopyCatService implements OnModuleDestroy {
         'input:not([type="hidden"])',
         'textarea',
         'select',
-        
+
         // Interactive elements
         'a[href]',
         '[role="button"]',
@@ -133,7 +141,7 @@ export class CopyCatService implements OnModuleDestroy {
         '[role="option"]',
         '[role="switch"]',
         '[role="tab"]',
-        
+
         // Form controls
         'label',
         '[role="checkbox"]',
@@ -141,17 +149,17 @@ export class CopyCatService implements OnModuleDestroy {
         '[role="combobox"]',
         '[role="slider"]',
         '[role="spinbutton"]',
-        
+
         // Custom interactive elements
         '[contenteditable="true"]',
         '[tabindex]:not([tabindex="-1"])',
-        
+
         // Controls with click handlers
         '[onClick]',
         '[onKeyPress]',
         '[onKeyDown]',
         '[onKeyUp]',
-        
+
         // Common interactive class names
         '.clickable',
         '.interactive',
@@ -159,7 +167,7 @@ export class CopyCatService implements OnModuleDestroy {
         '.btn'
       ].join(', ').trim()
     );
-    
+
     const occupiedPositions = new Set();
 
     for (let i = 0; i < elements.length; i++) {
@@ -209,7 +217,7 @@ export class CopyCatService implements OnModuleDestroy {
             if (
               sibling.nodeType === 1 &&
               (sibling as Element).tagName.toLowerCase() ===
-                element.tagName.toLowerCase()
+              element.tagName.toLowerCase()
             ) {
               pos++;
             }
@@ -322,99 +330,165 @@ export class CopyCatService implements OnModuleDestroy {
     screenshotUrl: string,
     originalPrompt: string,
   ): ChatCompletionUserMessageParam['content'] {
-    // Detect platform architecture
     const os = process.platform;
-    const isMac = os === 'darwin';
+    const modifierKey = os === 'darwin' ? 'Command' : 'Ctrl';
 
     return [
       {
         type: 'text',
-        text: `You are a browser automation assistant using Playwright. You are currently on ${this.page.url()}, if you find yourself in the wrong url, use navigate action to go back to the correct url. Analyze the screenshot and the Original Instruction and follow these rules:
+        text: `▲ BROWSER AUTOMATION AGENT ▲
+Analyze SCREENSHOT with COLOR-CODED ELEMENT INDEXES (1-∞). Use ONLY VISIBLE INDEXES.
 
-  Rules:
-  1. Examine the screenshot with numbered interactive elements (the boxes and numbers are color coded so you know which number belongs to which box). **You must use the colors to identify the element indexes **
-  2. Generate actions in JSON format with:
-     - "actions": Array of Playwright commands (use only allowed actions)
-     - "summary": Concise step description (1-2 sentences)
-     - "status": "continue" or "finish"
-  3. You are working alongside the user as an assistant, so part of the work might already be done, you need to finish the remaining. Only generate actions for what is still pending
-  4. You may have multiple options to choose from, reflect on what the user said and then take the best course of action. For example, the first link isn't always the best option to choose from.
+COMMAND SYNTAX:
+1. click(<index>)          - Buttons, links, inputs
+2. type(<index>, "text")   - Text fields, editors
+3. press_key("<keys>")         - Keyboard actions (${modifierKey}+A, Enter, F5)
+4. select(<index>, "text") - Dropdowns, radio buttons
+5. navigate("<url>")       - Full URL required
+6. wait(<seconds>)              - 1-5s pauses
+7. scroll("<direction>")   - up|down|top|bottom
 
-  Allowed Actions (Playwright-specific):
-  - click(index): Left-click element
-  - double_click(index): Double left-click
-  - right_click(index): Right-click context menu
-  - type(index, value): Input text (supports Unicode)
-  - select(index, value): Select dropdown option
-  - hover(index): Mouse hover
-  - wait(value): Pause in seconds
-  - navigate(value): Load URL
-  - scroll(value): Scroll ('up', 'down', or pixels)
-  - press_key(value): Keyboard action (single key or modifier combo)
-  - drag(index, targetIndex): Drag and drop
+STRICT RULES:
+• INDEXES MUST MATCH SCREENSHOT COLORS
+• Numbering starts at 1 (no index 0)
+• Maximum 3 actions per response
+• Chain element sequences: click(2)→type(2,"text")
+• If no valid index exists, use global actions
 
-  3. Only output the actions you can take on this screenshot. We will ask you for more instructions once we navigate to the next page.
+JSON SCHEMA:
+<json>
+{
+  "actions": [
+    {
+      "action": "click|type|press_key|select|navigate|wait|scroll",
+      "index": "ONLY if element-specific",
+      "value": "required for type/select/navigate/wait",
+      "reason": "15-word max explanation"
+    }
+  ],
+  "status": "continue|finish",
+  "summary": "25-word max step overview"
+}
+</json>
 
-  Keyboard Specifics:
-  - Use Playwright key names: 'ArrowUp', 'Enter', 'Control', etc.
-  - Combine modifiers with '+': 'Control+V', 'Shift+ArrowDown'
-  - Common combinations:
-    - Copy: '${isMac ? 'Command' : 'Control'}+C'
-    - Paste: '${isMac ? 'Command' : 'Control'}+V'
-    - Select All: '${isMac ? 'Command' : 'Control'}+A'
-    - Tab Navigation: 'Control+Tab'
-    - Refresh: 'F5'
+FAIL-SAFES:
+1. INVALID INDEXES WILL CRASH SYSTEM
+2. Action/value requirements:
+   ┌─────────────┬───────────┬────────────────────────┐
+   │ Action      │ Requires  │ Value Format           │
+   ├─────────────┼───────────┼────────────────────────┤
+   │ click       │ index     │ -                      │
+   │ type        │ index     │ string                 │
+   │ press_key   │ -         │ key combo              │
+   │ select      │ index     │ option text/value      │
+   │ navigate    │ -         │ full URL               │
+   │ wait        │ -         │ 1000-5000              │
+   │ scroll      │ -         │ direction              │
+   └─────────────┴───────────┴────────────────────────┘
 
-  Response Requirements:
-  1. ** index are numbers that we have given to each element after adding a box around them, this is what we use to tell each other what element to interact with **
-  2. For text input, include exact values
-  3. Chain related actions (click -> type -> press_key)
-  4. Use 'wait' strategically between actions, for example when filling out a form, wait for the dropdown to appear before taking a screenshot again and selecting it, wait should always be followed by screenshot
-  5. Make sure to not use enter and click for the same action.
+EXAMPLE 1 - FORM FILLING:
+User: "Order 2 coffee mugs"
+<json>
+{
+  "actions": [
+    {"action": "click", "index": 5, "reason": "Select quantity field"},
+    {"action": "type", "index": 5, "value": "2", "reason": "Update quantity"},
+    {"action": "press_key", "value": "Tab", "reason": "Move to next field"}
+  ],
+  "status": "continue",
+  "summary": "Updated item quantity"
+}
+</json>
 
-  Example Workflow:
-  User: "Search for playwright docs and open first result"
-  Response:
-  {
-    "actions": [
-      { "index": 12, "action": "click", "reason": "Focus search field" },
-      { "index": 12, "action": "type", "value": "playwright docs", "reason": "Enter query" },
-      { "action": "press_key", "value": "Enter", "reason": "Submit search" },
-      { "index": 5, "action": "click", "reason": "Open first result" }
-    ],
-    "status": "finish"
-  }
+EXAMPLE 2 - NO VISIBLE ELEMENTS:
+<json>
+{
+  "actions": [
+    {"action": "press_key", "value": "F5", "reason": "Refresh page"},
+    {"action": "wait", "value": 2000, "reason": "Wait for reload"}
+  ],
+  "status": "continue",
+  "summary": "Refreshed page content"
+}
+</json>
 
-  Current Platform: ${os === 'darwin' ? 'macOS' : 'Linux'}
+CURRENT TASK: "${originalPrompt}"
 
+SCREENSHOT ANALYSIS:
+• Indexes updated in real-time - use LATEST NUMBERS
+• Elements without colored numbers CANNOT be used
+• Verify index-color matching before responding
+• If uncertain, use status:"continue" for next step
 
-  Original Instruction:
-  ${originalPrompt}
-  `,
+RESPOND ONLY WITH VALID JSON IN <json> TAGS.`,
       },
       {
         type: 'image_url',
-        image_url: { url: screenshotUrl },
+        image_url: { 
+          url: screenshotUrl,
+          detail: "high"
+        },
       },
     ];
   }
 
+  private extractJSON(content: string): any | null {
+    // Try structured formats first
+    const structuredMatch = content.match(
+      /(?:<json>|```json)(.*?)(?:<\/json>|```)/s
+    );
+
+    if (structuredMatch) {
+      try {
+        return JSON.parse(structuredMatch[1].trim());
+      } catch (e) {
+        console.warn('Failed to parse structured JSON, trying fallback...');
+      }
+    }
+
+    // Fallback: Attempt to find first valid JSON in content
+    const jsonCandidates = content.match(
+      /{(?:[^{}]|{(?:[^{}]|)*})*}/gs
+    ) || [];
+
+    for (const candidate of jsonCandidates) {
+      try {
+        const parsed = JSON.parse(candidate.trim());
+        // Basic schema validation
+        if (parsed.actions && typeof parsed.status === 'string') {
+          return parsed;
+        }
+      } catch (e) {
+        // Continue checking other candidates
+      }
+    }
+
+    // Final attempt: Try parsing entire content
+    try {
+      return JSON.parse(content.trim());
+    } catch (e) {
+      console.error('All JSON extraction attempts failed:', e);
+      console.log(JSON.stringify(content, null, 2));
+      return null;
+    }
+  }
+
   async runAutomation(message: string) {
+    await this.markClickableElements();
+    const screenshot = await this.captureScreenshot();
+
+    await this.removeMarkings();
+    let messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      {
+        role: 'user',
+        content: this.createSystemMessageContent(
+          screenshot,
+          message,
+        ),
+      },
+    ];
+
     while (true) {
-      await this.markClickableElements();
-      const screenshot = await this.captureScreenshot();
-
-      await this.removeMarkings();
-      let messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-        {
-          role: 'user',
-          content: this.createSystemMessageContent(
-            screenshot,
-            message,
-          ),
-        },
-      ];
-
       const result = await client.chat.completions.create({
         model: 'Qwen/Qwen2-VL-72B-Instruct',
         messages: messages,
@@ -423,16 +497,72 @@ export class CopyCatService implements OnModuleDestroy {
       const assistantResponse = result.choices[0].message.content;
 
       try {
-        const response = JSON.parse(assistantResponse);
+        const response = this.extractJSON(assistantResponse);
 
-        const actions: AutomationAction[] = response.actions || [];
+        if (response === null) {
+          console.error("Invalid JSON:", assistantResponse);
+          continue;
+        }
+
+        console.log(JSON.stringify(response, null, 2));
+
+        const actions: AutomationAction[] = response.actions || response;
         const status = response.status || 'continue';
 
         if (actions.length > 0) {
-          // this function should return what actions were taken so we can append it to the messages array
-          await this.executeActions(actions);
+          messages.push({
+            role: 'assistant',
+            content: JSON.stringify(actions)
+          });
+
+          const response = await this.executeActions(actions);
+          messages.push({
+            role: 'user',
+            content: response
+          });
+
           await this.page?.waitForLoadState('networkidle');
         }
+
+        // Process existing messages to replace images with text
+        messages = messages.map(msg => {
+          if (msg.role === 'user') {
+            const content = msg.content;
+            if (Array.isArray(content)) {
+              return {
+                ...msg,
+                content: content.map(part => {
+                  if (part.type === 'image_url') {
+                    return null
+                  }
+                  return part; // Preserve other content types
+                }).filter(x => x !== null)
+              };
+            }
+          }
+          return msg;
+        });
+
+        await this.markClickableElements();
+        const newScreenshot = await this.captureScreenshot();
+
+        await this.removeMarkings();
+
+        // Add new image message
+        messages.push({
+          role: 'user',
+          content: [
+            {
+              "type": "text",
+              "text": `Here is the most recent screenshot, predict the actions to be taken within <json>{"actions": [{"action": "click", "index": 5, "reason": "Select quantity field"}], "status": "continue", "summary": "some summary here..."}</json> tags`
+            },
+            {
+              "image_url": {
+                "url": newScreenshot,
+              },
+              "type": "image_url",
+            }]
+        });
 
         if (status === 'finish') {
           return assistantResponse;
@@ -441,25 +571,62 @@ export class CopyCatService implements OnModuleDestroy {
         console.error(error)
         console.error("We don't care, pass on to the next iteration ...");
       }
-
     }
   }
 
-  async executeActions(actions: AutomationAction[]): Promise<void> {
-    for await (const action of actions) {
+  async executeActions(actions: AutomationAction[]): Promise<string> {
+    const actionResults = await actions.reduce(async (promiseAcc, action) => {
+      // Wait for the previous actions to complete
+      const acc = await promiseAcc;
+      
       try {
         await this.browserAutomationService.executeAction(
           this.page,
           action,
-          this.elementMap,
+          this.elementMap
         );
+  
+        await sleep(1000); // Wait for the page to load
+        
+        return [...acc, {
+          actionType: action.action,
+          index: action.index,
+          reason: action.reason,
+          succeeded: true,
+          details: { value: action.value || '' }
+        }];
       } catch (error) {
         this.logger.error(
           `Failed to execute action ${action.action} on element ${action.index}`,
-          error,
+          error
         );
-        throw error;
+  
+        return [...acc, {
+          actionType: action.action,
+          index: action.index,
+          reason: action.reason,
+          succeeded: false,
+          error: error.toString()
+        }];
       }
-    }
+    }, Promise.resolve([] as ActionResult[]));
+  
+    // Generate the summary of all actions
+    const summary = this.generateSummary(actionResults);
+    this.logger.debug('Action Execution Summary:');
+    this.logger.debug(summary);
+  
+    return summary;
+  }
+
+  generateSummary(actionResults: ActionResult[]): string {
+    return actionResults.map(result => {
+      const base = `Action: ${result.actionType}, Index: ${result.index || 'N/A'}, Reason: ${result.reason}`;
+      if (result.succeeded) {
+        return `${base} - Succeeded. Details: ${result.details?.value || 'N/A'}`;
+      } else {
+        return `${base} - Failed. Error: ${result.error || 'Unknown error'}`;
+      }
+    }).join('\n');
   }
 }
