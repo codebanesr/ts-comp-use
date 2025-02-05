@@ -1,4 +1,4 @@
-# Computer Use & Browser Use Implementations
+# Computer & Browser Use Agent Implementations
 
 NodeComp is a sophisticated system that combines multiple modules to enable AI-driven computer interaction, web automation, and virtual display management. The system provides a comprehensive solution for automated computer control and web interaction through various specialized modules.
 
